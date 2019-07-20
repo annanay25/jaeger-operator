@@ -140,7 +140,6 @@ func container(jaeger *v1.Jaeger, dep *appsv1.Deployment) corev1.Container {
 	// see https://github.com/jaegertracing/jaeger-operator/issues/334
 	sort.Strings(args)
 
-
 	return corev1.Container{
 		Image: jaeger.Spec.Agent.Image,
 		Name:  "jaeger-agent",
