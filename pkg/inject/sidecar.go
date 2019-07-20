@@ -106,34 +106,38 @@ func container(jaeger *v1.Jaeger, dep *appsv1.Deployment) corev1.Container {
 		}
 	}
 
+	// Checking annotations for CPU/Memory limits
+	if dep.Annotations[LimitCPU] != "" {
+		limitCPU = dep.Annotations[LimitCPU]
+		CPULimit, err := resource.ParseQuantity(limitCPU)
+		if err != nil {
+			jaeger.Logger().Debugf("Could not parse quantity for CPU limits: %v, using defaults.", limitCPU)
+		} else {
+			// Add CPU limits based on annotations.
+		}
+	}
+	if dep.Annotations[LimitMem] != "" {
+		limitMem = dep.Annotations[LimitMem]
+		MemLimit, err := resource.ParseQuantity(limitMem)
+		if err != nil {
+			jaeger.Logger().Debugf("Could not parse quantity for Memory limits: %v, using defaults.", limitMem)
+		} else {
+			// Add Memory limits based on annotations.
+		}
+	}
+
+
+	zkCompactTrft := util.GetPort("--processor.zipkin-compact.server-host-port=", args, 5775)
+	configRest := util.GetPort("--http-server.host-port=", args, 5778)
+	jgCompactTrft := util.GetPort("--processor.jaeger-compact.server-host-port=", args, 6831)
+	jgBinaryTrft := util.GetPort("--processor.jaeger-binary.server-host-port=", args, 6832)
+
+	commonSpec := util.Merge([]v1.JaegerCommonSpec{jaeger.Spec.Agent.JaegerCommonSpec, jaeger.Spec.JaegerCommonSpec})
+
 	// ensure we have a consistent order of the arguments
 	// see https://github.com/jaegertracing/jaeger-operator/issues/334
 	sort.Strings(args)
 
-	// Checking annotations for CPU/Memory limits
-	limitCPU := "500m"
-	limitMem := "128Mi"
-
-	CPULimitDefault, _ := resource.ParseQuantity(limitCPU)
-	MemLimitDefault, _ := resource.ParseQuantity(limitMem)
-
-	if dep.Annotations[LimitCPU] != "" {
-		limitCPU = dep.Annotations[LimitCPU]
-	}
-	if dep.Annotations[LimitMem] != "" {
-		limitMem = dep.Annotations[LimitMem]
-	}
-
-	CPULimit, err := resource.ParseQuantity(limitCPU)
-	if err != nil {
-		jaeger.Logger().Debugf("Could not parse quantity for CPU limits: %v, using defaults.", limitCPU)
-		CPULimit = CPULimitDefault
-	}
-	MemLimit, err := resource.ParseQuantity(limitMem)
-	if err != nil {
-		jaeger.Logger().Debugf("Could not parse quantity for Memory limits: %v, using defaults.", limitMem)
-		MemLimit = MemLimitDefault
-	}
 
 	return corev1.Container{
 		Image: jaeger.Spec.Agent.Image,
@@ -141,37 +145,35 @@ func container(jaeger *v1.Jaeger, dep *appsv1.Deployment) corev1.Container {
 		Args:  args,
 		Ports: []corev1.ContainerPort{
 			{
-				ContainerPort: 5775,
+				ContainerPort: zkCompactTrft,
 				Name:          "zk-compact-trft",
 			},
 			{
-				ContainerPort: 5778,
+				ContainerPort: configRest,
 				Name:          "config-rest",
 			},
 			{
-				ContainerPort: 6831,
+				ContainerPort: jgCompactTrft,
 				Name:          "jg-compact-trft",
 			},
 			{
-				ContainerPort: 6832,
+				ContainerPort: jgBinaryTrft,
 				Name:          "jg-binary-trft",
 			},
 		},
-		Resources: corev1.ResourceRequirements{
-			Limits: corev1.ResourceList{
-				corev1.ResourceLimitsCPU:    CPULimit,
-				corev1.ResourceLimitsMemory: MemLimit,
-			},
-			Requests: corev1.ResourceList{
-				corev1.ResourceRequestsCPU:    CPULimit,
-				corev1.ResourceRequestsMemory: MemLimit,
-			},
-		},
+		Resources: commonSpec.Resources,
 	}
 }
 
 func decorate(dep *appsv1.Deployment) {
-	if app, found := dep.Spec.Template.Labels["app"]; found {
+	app, found := dep.Spec.Template.Labels["app.kubernetes.io/instance"]
+	if !found {
+		app, found = dep.Spec.Template.Labels["app.kubernetes.io/name"]
+	}
+	if !found {
+		app, found = dep.Spec.Template.Labels["app"]
+	}
+	if found {
 		// Append the namespace to the app name. Using the DNS style "<app>.<namespace>""
 		// which also matches with the style used in Istio.
 		if len(dep.Namespace) > 0 {

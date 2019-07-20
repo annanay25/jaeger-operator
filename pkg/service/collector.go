@@ -6,7 +6,8 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	"github.com/jaegertracing/jaeger-operator/pkg/apis/jaegertracing/v1"
+	v1 "github.com/jaegertracing/jaeger-operator/pkg/apis/jaegertracing/v1"
+	"github.com/jaegertracing/jaeger-operator/pkg/util"
 )
 
 // NewCollectorServices returns a new Kubernetes service for Jaeger Collector backed by the pods matching the selector
@@ -20,6 +21,9 @@ func NewCollectorServices(jaeger *v1.Jaeger, selector map[string]string) []*core
 func headlessCollectorService(jaeger *v1.Jaeger, selector map[string]string) *corev1.Service {
 	svc := collectorService(jaeger, selector)
 	svc.Name = GetNameForHeadlessCollectorService(jaeger)
+	svc.Annotations = map[string]string{
+		"prometheus.io/scrape": "false",
+	}
 	svc.Spec.ClusterIP = "None"
 	return svc
 }
@@ -84,10 +88,10 @@ func collectorService(jaeger *v1.Jaeger, selector map[string]string) *corev1.Ser
 
 // GetNameForCollectorService returns the service name for the collector in this Jaeger instance
 func GetNameForCollectorService(jaeger *v1.Jaeger) string {
-	return fmt.Sprintf("%s-collector", jaeger.Name)
+	return util.DNSName(fmt.Sprintf("%s-collector", jaeger.Name))
 }
 
 // GetNameForHeadlessCollectorService returns the headless service name for the collector in this Jaeger instance
 func GetNameForHeadlessCollectorService(jaeger *v1.Jaeger) string {
-	return fmt.Sprintf("%s-collector-headless", jaeger.Name)
+	return util.DNSName(fmt.Sprintf("%s-collector-headless", jaeger.Name))
 }

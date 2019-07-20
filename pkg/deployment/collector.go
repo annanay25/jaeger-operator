@@ -3,6 +3,7 @@ package deployment
 import (
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/spf13/viper"
@@ -50,12 +51,18 @@ func (c *Collector) Get() *appsv1.Deployment {
 	labels := c.labels()
 	trueVar := true
 
+	args := append(c.jaeger.Spec.Collector.Options.ToArgs())
+
+	adminPort := util.GetPort("--admin-http-port=", args, 14269)
+
 	baseCommonSpec := v1.JaegerCommonSpec{
 		Annotations: map[string]string{
 			"prometheus.io/scrape":    "true",
-			"prometheus.io/port":      "14268",
+			"prometheus.io/port":      strconv.Itoa(int(adminPort)),
 			"sidecar.istio.io/inject": "false",
+			"linkerd.io/inject":       "disabled",
 		},
+		Labels: labels,
 	}
 
 	commonSpec := util.Merge([]v1.JaegerCommonSpec{c.jaeger.Spec.Collector.JaegerCommonSpec, c.jaeger.Spec.JaegerCommonSpec, baseCommonSpec})
@@ -78,8 +85,7 @@ func (c *Collector) Get() *appsv1.Deployment {
 		storageType = "kafka"
 	}
 	options := allArgs(c.jaeger.Spec.Collector.Options,
-		c.jaeger.Spec.Storage.Options.Filter(storage.OptionsPrefix(storageType)),
-		c.jaeger.Spec.Ingester.Options.Filter(storage.OptionsPrefix(storageType)))
+		c.jaeger.Spec.Storage.Options.Filter(storage.OptionsPrefix(storageType)))
 
 	sampling.Update(c.jaeger, commonSpec, &options)
 
@@ -95,7 +101,7 @@ func (c *Collector) Get() *appsv1.Deployment {
 		ObjectMeta: metav1.ObjectMeta{
 			Name:        c.name(),
 			Namespace:   c.jaeger.Namespace,
-			Labels:      labels,
+			Labels:      commonSpec.Labels,
 			Annotations: commonSpec.Annotations,
 			OwnerReferences: []metav1.OwnerReference{
 				metav1.OwnerReference{
@@ -114,7 +120,7 @@ func (c *Collector) Get() *appsv1.Deployment {
 			},
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{
-					Labels:      labels,
+					Labels:      commonSpec.Labels,
 					Annotations: commonSpec.Annotations,
 				},
 				Spec: corev1.PodSpec{
@@ -147,12 +153,16 @@ func (c *Collector) Get() *appsv1.Deployment {
 								ContainerPort: 14268,
 								Name:          "c-binary-trft",
 							},
+							{
+								ContainerPort: adminPort,
+								Name:          "admin-http",
+							},
 						},
 						ReadinessProbe: &corev1.Probe{
 							Handler: corev1.Handler{
 								HTTPGet: &corev1.HTTPGetAction{
 									Path: "/",
-									Port: intstr.FromInt(14269),
+									Port: intstr.FromInt(int(adminPort)),
 								},
 							},
 							InitialDelaySeconds: 1,
@@ -160,7 +170,10 @@ func (c *Collector) Get() *appsv1.Deployment {
 						Resources: commonSpec.Resources,
 					}},
 					Volumes:            commonSpec.Volumes,
-					ServiceAccountName: account.JaegerServiceAccountFor(c.jaeger),
+					ServiceAccountName: account.JaegerServiceAccountFor(c.jaeger, account.CollectorComponent),
+					Affinity:           commonSpec.Affinity,
+					Tolerations:        commonSpec.Tolerations,
+					SecurityContext:    commonSpec.SecurityContext,
 				},
 			},
 		},

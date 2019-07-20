@@ -6,9 +6,10 @@ import (
 	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 
-	"github.com/jaegertracing/jaeger-operator/pkg/apis/jaegertracing/v1"
-	esv1alpha1 "github.com/jaegertracing/jaeger-operator/pkg/storage/elasticsearch/v1alpha1"
+	v1 "github.com/jaegertracing/jaeger-operator/pkg/apis/jaegertracing/v1"
+	esv1 "github.com/jaegertracing/jaeger-operator/pkg/storage/elasticsearch/v1"
 )
 
 func TestShouldDeployElasticsearch(t *testing.T) {
@@ -27,68 +28,111 @@ func TestShouldDeployElasticsearch(t *testing.T) {
 }
 
 func TestCreateElasticsearchCR(t *testing.T) {
+	storageClassName := "floppydisk"
+	genuuid1 := "myprojectfoo"
+	genuuidmaster1 := "myprojectfoomaster"
+	genuuid2 := "myprojectfoobar"
+	genuuidmaster2 := "myprojectfoobarmaster"
 	tests := []struct {
-		jEsSpec v1.ElasticsearchSpec
-		esSpec  esv1alpha1.ElasticsearchSpec
+		name      string
+		namespace string
+		jEsSpec   v1.ElasticsearchSpec
+		esSpec    esv1.ElasticsearchSpec
 	}{
 		{
+			name:      "foo",
+			namespace: "myproject",
 			jEsSpec: v1.ElasticsearchSpec{
 				NodeCount:        2,
-				RedundancyPolicy: esv1alpha1.FullRedundancy,
-				Storage: esv1alpha1.ElasticsearchStorageSpec{
-					StorageClassName: "floppydisk",
+				RedundancyPolicy: esv1.FullRedundancy,
+				Storage: esv1.ElasticsearchStorageSpec{
+					StorageClassName: &storageClassName,
 				},
 			},
-			esSpec: esv1alpha1.ElasticsearchSpec{
-				ManagementState:  esv1alpha1.ManagementStateManaged,
-				RedundancyPolicy: esv1alpha1.FullRedundancy,
-				Spec:             esv1alpha1.ElasticsearchNodeSpec{},
-				Nodes: []esv1alpha1.ElasticsearchNode{
+			esSpec: esv1.ElasticsearchSpec{
+				ManagementState:  esv1.ManagementStateManaged,
+				RedundancyPolicy: esv1.FullRedundancy,
+				Spec:             esv1.ElasticsearchNodeSpec{},
+				Nodes: []esv1.ElasticsearchNode{
 					{
 						NodeCount: 2,
-						Storage:   esv1alpha1.ElasticsearchStorageSpec{StorageClassName: "floppydisk"},
-						Roles:     []esv1alpha1.ElasticsearchNodeRole{esv1alpha1.ElasticsearchRoleClient, esv1alpha1.ElasticsearchRoleData, esv1alpha1.ElasticsearchRoleMaster},
+						Storage:   esv1.ElasticsearchStorageSpec{StorageClassName: &storageClassName},
+						Roles:     []esv1.ElasticsearchNodeRole{esv1.ElasticsearchRoleClient, esv1.ElasticsearchRoleData, esv1.ElasticsearchRoleMaster},
+						GenUUID:   &genuuid1,
 					},
 				},
 			},
 		},
 		{
+			name:      "foo",
+			namespace: "myproject",
 			jEsSpec: v1.ElasticsearchSpec{
 				NodeCount:        5,
-				RedundancyPolicy: esv1alpha1.FullRedundancy,
-				Storage: esv1alpha1.ElasticsearchStorageSpec{
-					StorageClassName: "floppydisk",
+				RedundancyPolicy: esv1.FullRedundancy,
+				Storage: esv1.ElasticsearchStorageSpec{
+					StorageClassName: &storageClassName,
 				},
 			},
-			esSpec: esv1alpha1.ElasticsearchSpec{
-				ManagementState:  esv1alpha1.ManagementStateManaged,
-				RedundancyPolicy: esv1alpha1.FullRedundancy,
-				Spec:             esv1alpha1.ElasticsearchNodeSpec{},
-				Nodes: []esv1alpha1.ElasticsearchNode{
+			esSpec: esv1.ElasticsearchSpec{
+				ManagementState:  esv1.ManagementStateManaged,
+				RedundancyPolicy: esv1.FullRedundancy,
+				Spec:             esv1.ElasticsearchNodeSpec{},
+				Nodes: []esv1.ElasticsearchNode{
 					{
 						NodeCount: 3,
-						Storage:   esv1alpha1.ElasticsearchStorageSpec{StorageClassName: "floppydisk"},
-						Roles:     []esv1alpha1.ElasticsearchNodeRole{esv1alpha1.ElasticsearchRoleMaster},
+						Storage:   esv1.ElasticsearchStorageSpec{StorageClassName: &storageClassName},
+						Roles:     []esv1.ElasticsearchNodeRole{esv1.ElasticsearchRoleMaster},
+						GenUUID:   &genuuidmaster1,
 					},
 					{
 						NodeCount: 2,
-						Storage:   esv1alpha1.ElasticsearchStorageSpec{StorageClassName: "floppydisk"},
-						Roles:     []esv1alpha1.ElasticsearchNodeRole{esv1alpha1.ElasticsearchRoleClient, esv1alpha1.ElasticsearchRoleData},
+						Storage:   esv1.ElasticsearchStorageSpec{StorageClassName: &storageClassName},
+						Roles:     []esv1.ElasticsearchNodeRole{esv1.ElasticsearchRoleClient, esv1.ElasticsearchRoleData},
+						GenUUID:   &genuuid1,
+					},
+				},
+			},
+		},
+		{
+			name:      "foo-ba%r",
+			namespace: "myproje&ct",
+			jEsSpec: v1.ElasticsearchSpec{
+				NodeCount:        5,
+				RedundancyPolicy: esv1.FullRedundancy,
+				Storage: esv1.ElasticsearchStorageSpec{
+					StorageClassName: &storageClassName,
+				},
+			},
+			esSpec: esv1.ElasticsearchSpec{
+				ManagementState:  esv1.ManagementStateManaged,
+				RedundancyPolicy: esv1.FullRedundancy,
+				Spec:             esv1.ElasticsearchNodeSpec{},
+				Nodes: []esv1.ElasticsearchNode{
+					{
+						NodeCount: 3,
+						Storage:   esv1.ElasticsearchStorageSpec{StorageClassName: &storageClassName},
+						Roles:     []esv1.ElasticsearchNodeRole{esv1.ElasticsearchRoleMaster},
+						GenUUID:   &genuuidmaster2,
+					},
+					{
+						NodeCount: 2,
+						Storage:   esv1.ElasticsearchStorageSpec{StorageClassName: &storageClassName},
+						Roles:     []esv1.ElasticsearchNodeRole{esv1.ElasticsearchRoleClient, esv1.ElasticsearchRoleData},
+						GenUUID:   &genuuid2,
 					},
 				},
 			},
 		},
 	}
 	for _, test := range tests {
-		j := v1.NewJaeger("foo")
-		j.Namespace = "myproject"
+		j := v1.NewJaeger(types.NamespacedName{Name: test.name, Namespace: test.namespace})
 		j.Spec.Storage.Elasticsearch = test.jEsSpec
 		es := &ElasticsearchDeployment{Jaeger: j}
 		cr := es.Elasticsearch()
-		assert.Equal(t, "myproject", cr.Namespace)
+		assert.Equal(t, test.namespace, cr.Namespace)
 		assert.Equal(t, "elasticsearch", cr.Name)
 		trueVar := true
-		assert.Equal(t, []metav1.OwnerReference{{Name: "foo", Controller: &trueVar}}, cr.OwnerReferences)
+		assert.Equal(t, []metav1.OwnerReference{{Name: test.name, Controller: &trueVar}}, cr.OwnerReferences)
 		assert.Equal(t, cr.Spec, test.esSpec)
 	}
 }
@@ -156,7 +200,7 @@ func TestInject(t *testing.T) {
 		},
 		{
 			pod: &corev1.PodSpec{Containers: []corev1.Container{{}}},
-			es:  v1.ElasticsearchSpec{NodeCount: 15, RedundancyPolicy: esv1alpha1.FullRedundancy},
+			es:  v1.ElasticsearchSpec{NodeCount: 15, RedundancyPolicy: esv1.FullRedundancy},
 			expected: &corev1.PodSpec{
 				Containers: []corev1.Container{{
 					Args: []string{
@@ -180,7 +224,7 @@ func TestInject(t *testing.T) {
 		},
 		{
 			pod: &corev1.PodSpec{Containers: []corev1.Container{{Args: []string{"--es-archive.enabled=true"}}}},
-			es:  v1.ElasticsearchSpec{NodeCount: 15, RedundancyPolicy: esv1alpha1.FullRedundancy},
+			es:  v1.ElasticsearchSpec{NodeCount: 15, RedundancyPolicy: esv1.FullRedundancy},
 			expected: &corev1.PodSpec{
 				Containers: []corev1.Container{{
 					Args: []string{
@@ -214,7 +258,7 @@ func TestInject(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		es := &ElasticsearchDeployment{Jaeger: v1.NewJaeger("hoo")}
+		es := &ElasticsearchDeployment{Jaeger: v1.NewJaeger(types.NamespacedName{Name: "hoo"})}
 		es.Jaeger.Spec.Storage.Elasticsearch = test.es
 		es.InjectStorageConfiguration(test.pod)
 		assert.Equal(t, test.expected, test.pod)
@@ -225,17 +269,17 @@ func TestInject(t *testing.T) {
 func TestCalculateReplicaShards(t *testing.T) {
 	tests := []struct {
 		dataNodes int
-		redType   esv1alpha1.RedundancyPolicyType
+		redType   esv1.RedundancyPolicyType
 		shards    int
 	}{
-		{redType: esv1alpha1.ZeroRedundancy, dataNodes: 1, shards: 0},
-		{redType: esv1alpha1.ZeroRedundancy, dataNodes: 1, shards: 0},
-		{redType: esv1alpha1.SingleRedundancy, dataNodes: 1, shards: 1},
-		{redType: esv1alpha1.SingleRedundancy, dataNodes: 20, shards: 1},
-		{redType: esv1alpha1.MultipleRedundancy, dataNodes: 1, shards: 0},
-		{redType: esv1alpha1.MultipleRedundancy, dataNodes: 20, shards: 9},
-		{redType: esv1alpha1.FullRedundancy, dataNodes: 1, shards: 0},
-		{redType: esv1alpha1.FullRedundancy, dataNodes: 20, shards: 19},
+		{redType: esv1.ZeroRedundancy, dataNodes: 1, shards: 0},
+		{redType: esv1.ZeroRedundancy, dataNodes: 1, shards: 0},
+		{redType: esv1.SingleRedundancy, dataNodes: 1, shards: 1},
+		{redType: esv1.SingleRedundancy, dataNodes: 20, shards: 1},
+		{redType: esv1.MultipleRedundancy, dataNodes: 1, shards: 0},
+		{redType: esv1.MultipleRedundancy, dataNodes: 20, shards: 9},
+		{redType: esv1.FullRedundancy, dataNodes: 1, shards: 0},
+		{redType: esv1.FullRedundancy, dataNodes: 20, shards: 19},
 	}
 	for _, test := range tests {
 		assert.Equal(t, test.shards, calculateReplicaShards(test.redType, test.dataNodes))

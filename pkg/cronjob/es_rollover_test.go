@@ -7,21 +7,22 @@ import (
 	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 
-	"github.com/jaegertracing/jaeger-operator/pkg/apis/jaegertracing/v1"
+	v1 "github.com/jaegertracing/jaeger-operator/pkg/apis/jaegertracing/v1"
 	"github.com/jaegertracing/jaeger-operator/pkg/util"
 )
 
 func TestCreateRollover(t *testing.T) {
-	cj := CreateRollover(v1.NewJaeger("pikachu"))
+	cj := CreateRollover(v1.NewJaeger(types.NamespacedName{Name: "pikachu"}))
 	assert.Equal(t, 2, len(cj))
 }
 
 func TestRollover(t *testing.T) {
-	j := v1.NewJaeger("eevee")
+	j := v1.NewJaeger(types.NamespacedName{Name: "eevee"})
 	j.Namespace = "kitchen"
-	j.Spec.Storage.Rollover.Image = "wohooo"
-	j.Spec.Storage.Rollover.Conditions = "weheee"
+	j.Spec.Storage.EsRollover.Image = "wohooo"
+	j.Spec.Storage.EsRollover.Conditions = "weheee"
 	j.Spec.Storage.Options = v1.NewOptions(map[string]interface{}{"es.server-urls": "foo,bar", "es.index-prefix": "shortone"})
 
 	cjob := rollover(j)
@@ -29,16 +30,16 @@ func TestRollover(t *testing.T) {
 	assert.Equal(t, []metav1.OwnerReference{util.AsOwner(j)}, cjob.OwnerReferences)
 	assert.Equal(t, util.Labels("eevee-es-rollover", "cronjob-es-rollover", *j), cjob.Labels)
 	assert.Equal(t, 1, len(cjob.Spec.JobTemplate.Spec.Template.Spec.Containers))
-	assert.Equal(t, j.Spec.Storage.Rollover.Image, cjob.Spec.JobTemplate.Spec.Template.Spec.Containers[0].Image)
+	assert.Equal(t, j.Spec.Storage.EsRollover.Image, cjob.Spec.JobTemplate.Spec.Template.Spec.Containers[0].Image)
 	assert.Equal(t, []string{"rollover", "foo"}, cjob.Spec.JobTemplate.Spec.Template.Spec.Containers[0].Args)
 	assert.Equal(t, []corev1.EnvVar{{Name: "INDEX_PREFIX", Value: "shortone"}, {Name: "CONDITIONS", Value: "weheee"}}, cjob.Spec.JobTemplate.Spec.Template.Spec.Containers[0].Env)
 }
 
 func TestLookback(t *testing.T) {
-	j := v1.NewJaeger("squirtle")
+	j := v1.NewJaeger(types.NamespacedName{Name: "squirtle"})
 	j.Namespace = "kitchen"
-	j.Spec.Storage.Rollover.Image = "wohooo"
-	j.Spec.Storage.Rollover.ReadTTL = "2h"
+	j.Spec.Storage.EsRollover.Image = "wohooo"
+	j.Spec.Storage.EsRollover.ReadTTL = "2h"
 	j.Spec.Storage.Options = v1.NewOptions(map[string]interface{}{"es.server-urls": "foo,bar", "es.index-prefix": "shortone"})
 
 	cjob := lookback(j)
@@ -46,7 +47,7 @@ func TestLookback(t *testing.T) {
 	assert.Equal(t, []metav1.OwnerReference{util.AsOwner(j)}, cjob.OwnerReferences)
 	assert.Equal(t, util.Labels("squirtle-es-lookback", "cronjob-es-lookback", *j), cjob.Labels)
 	assert.Equal(t, 1, len(cjob.Spec.JobTemplate.Spec.Template.Spec.Containers))
-	assert.Equal(t, j.Spec.Storage.Rollover.Image, cjob.Spec.JobTemplate.Spec.Template.Spec.Containers[0].Image)
+	assert.Equal(t, j.Spec.Storage.EsRollover.Image, cjob.Spec.JobTemplate.Spec.Template.Spec.Containers[0].Image)
 	assert.Equal(t, []string{"lookback", "foo"}, cjob.Spec.JobTemplate.Spec.Template.Spec.Containers[0].Args)
 	assert.Equal(t, []corev1.EnvVar{{Name: "INDEX_PREFIX", Value: "shortone"}, {Name: "UNIT", Value: "hours"}, {Name: "UNIT_COUNT", Value: "2"}}, cjob.Spec.JobTemplate.Spec.Template.Spec.Containers[0].Env)
 }

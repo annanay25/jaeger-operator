@@ -3,6 +3,7 @@ package deployment
 import (
 	"fmt"
 	"sort"
+	"strconv"
 
 	"github.com/spf13/viper"
 	appsv1 "k8s.io/api/apps/v1"
@@ -48,11 +49,16 @@ func (q *Query) Get() *appsv1.Deployment {
 	labels := q.labels()
 	trueVar := true
 
+	args := append(q.jaeger.Spec.Query.Options.ToArgs())
+
+	adminPort := util.GetPort("--admin-http-port=", args, 16687)
+
 	baseCommonSpec := v1.JaegerCommonSpec{
 		Annotations: map[string]string{
 			"prometheus.io/scrape":    "true",
-			"prometheus.io/port":      "16686",
+			"prometheus.io/port":      strconv.Itoa(int(adminPort)),
 			"sidecar.istio.io/inject": "false",
+			"linkerd.io/inject":       "disabled",
 
 			// note that we are explicitly using a string here, not the value from `inject.Annotation`
 			// this has two reasons:
@@ -61,6 +67,7 @@ func (q *Query) Get() *appsv1.Deployment {
 			// it at will. So, we leave this configured just like any other application would
 			"sidecar.jaegertracing.io/inject": q.jaeger.Name,
 		},
+		Labels: labels,
 	}
 
 	commonSpec := util.Merge([]v1.JaegerCommonSpec{q.jaeger.Spec.Query.JaegerCommonSpec, q.jaeger.Spec.JaegerCommonSpec, baseCommonSpec})
@@ -92,7 +99,7 @@ func (q *Query) Get() *appsv1.Deployment {
 		ObjectMeta: metav1.ObjectMeta{
 			Name:        fmt.Sprintf("%s-query", q.jaeger.Name),
 			Namespace:   q.jaeger.Namespace,
-			Labels:      labels,
+			Labels:      commonSpec.Labels,
 			Annotations: commonSpec.Annotations,
 			OwnerReferences: []metav1.OwnerReference{
 				metav1.OwnerReference{
@@ -111,7 +118,7 @@ func (q *Query) Get() *appsv1.Deployment {
 			},
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{
-					Labels:      labels,
+					Labels:      commonSpec.Labels,
 					Annotations: commonSpec.Annotations,
 				},
 				Spec: corev1.PodSpec{
@@ -132,12 +139,16 @@ func (q *Query) Get() *appsv1.Deployment {
 								ContainerPort: 16686,
 								Name:          "query",
 							},
+							{
+								ContainerPort: adminPort,
+								Name:          "admin-http",
+							},
 						},
 						ReadinessProbe: &corev1.Probe{
 							Handler: corev1.Handler{
 								HTTPGet: &corev1.HTTPGetAction{
 									Path: "/",
-									Port: intstr.FromInt(16687),
+									Port: intstr.FromInt(int(adminPort)),
 								},
 							},
 							InitialDelaySeconds: 1,
@@ -145,7 +156,10 @@ func (q *Query) Get() *appsv1.Deployment {
 						Resources: commonSpec.Resources,
 					}},
 					Volumes:            commonSpec.Volumes,
-					ServiceAccountName: account.JaegerServiceAccountFor(q.jaeger),
+					ServiceAccountName: account.JaegerServiceAccountFor(q.jaeger, account.QueryComponent),
+					Affinity:           commonSpec.Affinity,
+					Tolerations:        commonSpec.Tolerations,
+					SecurityContext:    commonSpec.SecurityContext,
 				},
 			},
 		},

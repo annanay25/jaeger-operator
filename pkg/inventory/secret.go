@@ -1,7 +1,11 @@
 package inventory
 
 import (
-	"k8s.io/api/core/v1"
+	"fmt"
+
+	v1 "k8s.io/api/core/v1"
+
+	"github.com/jaegertracing/jaeger-operator/pkg/util"
 )
 
 // Secret represents the secrets inventory based on the current and desired states
@@ -20,6 +24,7 @@ func ForSecrets(existing []v1.Secret, desired []v1.Secret) Secret {
 	for k, v := range mcreate {
 		if t, ok := mdelete[k]; ok {
 			tp := t.DeepCopy()
+			util.InitObjectMeta(tp)
 
 			tp.Data = v.Data
 			tp.StringData = v.StringData
@@ -49,7 +54,7 @@ func ForSecrets(existing []v1.Secret, desired []v1.Secret) Secret {
 func secretsMap(deps []v1.Secret) map[string]v1.Secret {
 	m := map[string]v1.Secret{}
 	for _, d := range deps {
-		m[d.Name] = d
+		m[fmt.Sprintf("%s.%s", d.Namespace, d.Name)] = d
 	}
 	return m
 }

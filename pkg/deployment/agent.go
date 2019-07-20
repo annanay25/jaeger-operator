@@ -3,6 +3,7 @@ package deployment
 import (
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/spf13/viper"
@@ -11,6 +12,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 
+	"github.com/jaegertracing/jaeger-operator/pkg/account"
 	"github.com/jaegertracing/jaeger-operator/pkg/apis/jaegertracing/v1"
 	"github.com/jaegertracing/jaeger-operator/pkg/service"
 	"github.com/jaegertracing/jaeger-operator/pkg/util"
@@ -48,15 +50,23 @@ func (a *Agent) Get() *appsv1.DaemonSet {
 		}
 	}
 
+	zkCompactTrft := util.GetPort("--processor.zipkin-compact.server-host-port=", args, 5775)
+	configRest := util.GetPort("--http-server.host-port=", args, 5778)
+	jgCompactTrft := util.GetPort("--processor.jaeger-compact.server-host-port=", args, 6831)
+	jgBinaryTrft := util.GetPort("--processor.jaeger-binary.server-host-port=", args, 6832)
+	adminPort := util.GetPort("--admin-http-port=", args, 14271)
+
 	trueVar := true
 	labels := a.labels()
 
 	baseCommonSpec := v1.JaegerCommonSpec{
 		Annotations: map[string]string{
 			"prometheus.io/scrape":    "true",
-			"prometheus.io/port":      "5778",
+			"prometheus.io/port":      strconv.Itoa(int(adminPort)),
 			"sidecar.istio.io/inject": "false",
+			"linkerd.io/inject":       "disabled",
 		},
+		Labels: labels,
 	}
 
 	commonSpec := util.Merge([]v1.JaegerCommonSpec{a.jaeger.Spec.Agent.JaegerCommonSpec, a.jaeger.Spec.JaegerCommonSpec, baseCommonSpec})
@@ -73,7 +83,7 @@ func (a *Agent) Get() *appsv1.DaemonSet {
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      fmt.Sprintf("%s-agent-daemonset", a.jaeger.Name),
 			Namespace: a.jaeger.Namespace,
-			Labels:    labels,
+			Labels:    commonSpec.Labels,
 			OwnerReferences: []metav1.OwnerReference{
 				metav1.OwnerReference{
 					APIVersion: a.jaeger.APIVersion,
@@ -90,7 +100,7 @@ func (a *Agent) Get() *appsv1.DaemonSet {
 			},
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{
-					Labels:      labels,
+					Labels:      commonSpec.Labels,
 					Annotations: commonSpec.Annotations,
 				},
 				Spec: corev1.PodSpec{
@@ -100,40 +110,49 @@ func (a *Agent) Get() *appsv1.DaemonSet {
 						Args:  args,
 						Ports: []corev1.ContainerPort{
 							{
-								ContainerPort: 5775,
-								HostPort:      5775,
+								ContainerPort: zkCompactTrft,
+								HostPort:      zkCompactTrft,
 								Name:          "zk-compact-trft",
 								Protocol:      corev1.ProtocolUDP,
 							},
 							{
-								ContainerPort: 5778,
-								HostPort:      5778,
+								ContainerPort: configRest,
+								HostPort:      configRest,
 								Name:          "config-rest",
 							},
 							{
-								ContainerPort: 6831,
-								HostPort:      6831,
+								ContainerPort: jgCompactTrft,
+								HostPort:      jgCompactTrft,
 								Name:          "jg-compact-trft",
 								Protocol:      corev1.ProtocolUDP,
 							},
 							{
-								ContainerPort: 6832,
-								HostPort:      6832,
+								ContainerPort: jgBinaryTrft,
+								HostPort:      jgBinaryTrft,
 								Name:          "jg-binary-trft",
 								Protocol:      corev1.ProtocolUDP,
+							},
+							{
+								ContainerPort: adminPort,
+								HostPort:      adminPort,
+								Name:          "admin-http",
 							},
 						},
 						ReadinessProbe: &corev1.Probe{
 							Handler: corev1.Handler{
 								HTTPGet: &corev1.HTTPGetAction{
-									Path: "/metrics",
-									Port: intstr.FromInt(5778),
+									Path: "/",
+									Port: intstr.FromInt(int(adminPort)),
 								},
 							},
 							InitialDelaySeconds: 1,
 						},
 						Resources: commonSpec.Resources,
 					}},
+					Affinity:           commonSpec.Affinity,
+					Tolerations:        commonSpec.Tolerations,
+					SecurityContext:    commonSpec.SecurityContext,
+					ServiceAccountName: account.JaegerServiceAccountFor(a.jaeger, account.AgentComponent),
 				},
 			},
 		},

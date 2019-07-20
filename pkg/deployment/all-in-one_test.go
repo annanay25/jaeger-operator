@@ -8,8 +8,9 @@ import (
 	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
+	"k8s.io/apimachinery/pkg/types"
 
-	"github.com/jaegertracing/jaeger-operator/pkg/apis/jaegertracing/v1"
+	v1 "github.com/jaegertracing/jaeger-operator/pkg/apis/jaegertracing/v1"
 )
 
 func init() {
@@ -22,7 +23,7 @@ func TestDefaultAllInOneImage(t *testing.T) {
 	viper.Set("jaeger-version", "123")
 	defer viper.Reset()
 
-	d := NewAllInOne(v1.NewJaeger("TestAllInOneDefaultImage")).Get()
+	d := NewAllInOne(v1.NewJaeger(types.NamespacedName{Name: "TestAllInOneDefaultImage"})).Get()
 
 	assert.Len(t, d.Spec.Template.Spec.Containers, 1)
 	assert.Equal(t, "org/custom-all-in-one-image:123", d.Spec.Template.Spec.Containers[0].Image)
@@ -41,7 +42,7 @@ func TestDefaultAllInOneImage(t *testing.T) {
 }
 
 func TestAllInOneAnnotations(t *testing.T) {
-	jaeger := v1.NewJaeger("TestAllInOneAnnotations")
+	jaeger := v1.NewJaeger(types.NamespacedName{Name: "TestAllInOneAnnotations"})
 	jaeger.Spec.Annotations = map[string]string{
 		"name":  "operator",
 		"hello": "jaeger",
@@ -58,17 +59,37 @@ func TestAllInOneAnnotations(t *testing.T) {
 	assert.Equal(t, "false", dep.Spec.Template.Annotations["sidecar.istio.io/inject"])
 	assert.Equal(t, "world", dep.Spec.Template.Annotations["hello"])
 	assert.Equal(t, "false", dep.Spec.Template.Annotations["prometheus.io/scrape"])
+	assert.Equal(t, "disabled", dep.Spec.Template.Annotations["linkerd.io/inject"])
+}
+
+func TestAllInOneLabels(t *testing.T) {
+	jaeger := v1.NewJaeger(types.NamespacedName{Name: "TestAllInOneLabels"})
+	jaeger.Spec.Labels = map[string]string{
+		"name":  "operator",
+		"hello": "jaeger",
+	}
+	jaeger.Spec.AllInOne.Labels = map[string]string{
+		"hello":   "world", // Override top level annotation
+		"another": "false",
+	}
+
+	allinone := NewAllInOne(jaeger)
+	dep := allinone.Get()
+
+	assert.Equal(t, "operator", dep.Spec.Template.Labels["name"])
+	assert.Equal(t, "world", dep.Spec.Template.Labels["hello"])
+	assert.Equal(t, "false", dep.Spec.Template.Labels["another"])
 }
 
 func TestAllInOneHasOwner(t *testing.T) {
 	name := "TestAllInOneHasOwner"
-	a := NewAllInOne(v1.NewJaeger(name))
+	a := NewAllInOne(v1.NewJaeger(types.NamespacedName{Name: name}))
 	assert.Equal(t, name, a.Get().ObjectMeta.Name)
 }
 
 func TestAllInOneNumberOfServices(t *testing.T) {
 	name := "TestNumberOfServices"
-	services := NewAllInOne(v1.NewJaeger(name)).Services()
+	services := NewAllInOne(v1.NewJaeger(types.NamespacedName{Name: name})).Services()
 	assert.Len(t, services, 4) // collector (headless and cluster IP), query, agent
 
 	for _, svc := range services {
@@ -98,7 +119,7 @@ func TestAllInOneVolumeMountsWithVolumes(t *testing.T) {
 		Name: "allInOneVolume",
 	}}
 
-	jaeger := v1.NewJaeger(name)
+	jaeger := v1.NewJaeger(types.NamespacedName{Name: name})
 	jaeger.Spec.Volumes = globalVolumes
 	jaeger.Spec.VolumeMounts = globalVolumeMounts
 	jaeger.Spec.AllInOne.Volumes = allInOneVolumes
@@ -117,7 +138,7 @@ func TestAllInOneVolumeMountsWithVolumes(t *testing.T) {
 }
 
 func TestAllInOneSecrets(t *testing.T) {
-	jaeger := v1.NewJaeger("TestAllInOneSecrets")
+	jaeger := v1.NewJaeger(types.NamespacedName{Name: "TestAllInOneSecrets"})
 	secret := "mysecret"
 	jaeger.Spec.Storage.SecretName = secret
 
@@ -140,7 +161,7 @@ func TestAllInOneMountGlobalVolumes(t *testing.T) {
 		ReadOnly: true,
 	}}
 
-	jaeger := v1.NewJaeger(name)
+	jaeger := v1.NewJaeger(types.NamespacedName{Name: name})
 	jaeger.Spec.Volumes = globalVolumes
 	jaeger.Spec.AllInOne.VolumeMounts = allInOneVolumeMounts
 	podSpec := NewAllInOne(jaeger).Get().Spec.Template.Spec
@@ -164,7 +185,7 @@ func TestAllInOneVolumeMountsWithSameName(t *testing.T) {
 		ReadOnly: false,
 	}}
 
-	jaeger := v1.NewJaeger(name)
+	jaeger := v1.NewJaeger(types.NamespacedName{Name: name})
 	jaeger.Spec.VolumeMounts = globalVolumeMounts
 	jaeger.Spec.AllInOne.VolumeMounts = allInOneVolumeMounts
 	podSpec := NewAllInOne(jaeger).Get().Spec.Template.Spec
@@ -188,7 +209,7 @@ func TestAllInOneVolumeWithSameName(t *testing.T) {
 		VolumeSource: corev1.VolumeSource{HostPath: &corev1.HostPathVolumeSource{Path: "/data2"}},
 	}}
 
-	jaeger := v1.NewJaeger(name)
+	jaeger := v1.NewJaeger(types.NamespacedName{Name: name})
 	jaeger.Spec.Volumes = globalVolumes
 	jaeger.Spec.AllInOne.Volumes = allInOneVolumes
 	podSpec := NewAllInOne(jaeger).Get().Spec.Template.Spec
@@ -200,7 +221,7 @@ func TestAllInOneVolumeWithSameName(t *testing.T) {
 }
 
 func TestAllInOneResources(t *testing.T) {
-	jaeger := v1.NewJaeger("TestAllInOneResources")
+	jaeger := v1.NewJaeger(types.NamespacedName{Name: "TestAllInOneResources"})
 	jaeger.Spec.Resources = corev1.ResourceRequirements{
 		Limits: corev1.ResourceList{
 			corev1.ResourceLimitsCPU:              *resource.NewQuantity(1024, resource.BinarySI),
@@ -233,8 +254,8 @@ func TestAllInOneResources(t *testing.T) {
 	assert.Equal(t, *resource.NewQuantity(512, resource.DecimalSI), dep.Spec.Template.Spec.Containers[0].Resources.Requests[corev1.ResourceRequestsEphemeralStorage])
 }
 
-func TestAllInOneLabels(t *testing.T) {
-	a := NewAllInOne(v1.NewJaeger("TestAllInOneLabels"))
+func TestAllInOneStandardLabels(t *testing.T) {
+	a := NewAllInOne(v1.NewJaeger(types.NamespacedName{Name: "TestAllInOneStandardLabels"}))
 	dep := a.Get()
 	assert.Equal(t, "jaeger-operator", dep.Spec.Template.Labels["app.kubernetes.io/managed-by"])
 	assert.Equal(t, "all-in-one", dep.Spec.Template.Labels["app.kubernetes.io/component"])
@@ -243,7 +264,7 @@ func TestAllInOneLabels(t *testing.T) {
 }
 
 func TestAllInOneOrderOfArguments(t *testing.T) {
-	jaeger := v1.NewJaeger("TestAllInOneOrderOfArguments")
+	jaeger := v1.NewJaeger(types.NamespacedName{Name: "TestAllInOneOrderOfArguments"})
 	jaeger.Spec.AllInOne.Options = v1.NewOptions(map[string]interface{}{
 		"b-option": "b-value",
 		"a-option": "a-value",

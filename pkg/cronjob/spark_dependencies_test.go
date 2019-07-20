@@ -6,7 +6,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
 
-	"github.com/jaegertracing/jaeger-operator/pkg/apis/jaegertracing/v1"
+	v1 "github.com/jaegertracing/jaeger-operator/pkg/apis/jaegertracing/v1"
 )
 
 func TestRemoveEmptyVars(t *testing.T) {
@@ -75,4 +75,11 @@ func TestStorageEnvs(t *testing.T) {
 
 func TestCreate(t *testing.T) {
 	assert.NotNil(t, CreateSparkDependencies(&v1.Jaeger{Spec: v1.JaegerSpec{Storage: v1.JaegerStorageSpec{Type: "elasticsearch"}}}))
+}
+
+func TestSparkDependencies(t *testing.T) {
+	j := &v1.Jaeger{Spec: v1.JaegerSpec{Storage: v1.JaegerStorageSpec{Type: "elasticsearch"}}}
+
+	cjob := CreateSparkDependencies(j)
+	assert.Equal(t, j.Namespace, cjob.Namespace)
 }

@@ -2,14 +2,16 @@ package inject
 
 import (
 	"fmt"
+	"sort"
 
 	"github.com/spf13/viper"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 
 	"github.com/jaegertracing/jaeger-operator/pkg/account"
-	"github.com/jaegertracing/jaeger-operator/pkg/apis/jaegertracing/v1"
+	v1 "github.com/jaegertracing/jaeger-operator/pkg/apis/jaegertracing/v1"
 	"github.com/jaegertracing/jaeger-operator/pkg/service"
+	"github.com/jaegertracing/jaeger-operator/pkg/util"
 )
 
 // OAuthProxy injects an appropriate proxy into the given deployment
@@ -32,8 +34,6 @@ func OAuthProxy(jaeger *v1.Jaeger, dep *appsv1.Deployment) *appsv1.Deployment {
 }
 
 func getOAuthProxyContainer(jaeger *v1.Jaeger) corev1.Container {
-	// keep this sorted!
-	// see https://github.com/jaegertracing/jaeger-operator/pull/337
 	args := []string{
 		"--cookie-secret=SECRET",
 		"--https-address=:8443",
@@ -43,6 +43,18 @@ func getOAuthProxyContainer(jaeger *v1.Jaeger) corev1.Container {
 		"--tls-key=/etc/tls/private/tls.key",
 		"--upstream=http://localhost:16686",
 	}
+
+	if len(jaeger.Spec.Ingress.OpenShift.SAR) > 0 {
+		args = append(args, fmt.Sprintf("--openshift-sar=%s", jaeger.Spec.Ingress.OpenShift.SAR))
+	}
+
+	if len(jaeger.Spec.Ingress.OpenShift.DelegateURLs) > 0 && viper.GetBool("auth-delegator-available") {
+		args = append(args, fmt.Sprintf("--openshift-delegate-urls=%s", jaeger.Spec.Ingress.OpenShift.DelegateURLs))
+	}
+
+	sort.Strings(args)
+
+	commonSpec := util.Merge([]v1.JaegerCommonSpec{jaeger.Spec.Ingress.JaegerCommonSpec, jaeger.Spec.JaegerCommonSpec})
 
 	return corev1.Container{
 		Image: viper.GetString("openshift-oauth-proxy-image"),
@@ -58,5 +70,6 @@ func getOAuthProxyContainer(jaeger *v1.Jaeger) corev1.Container {
 				Name:          "public",
 			},
 		},
+		Resources: commonSpec.Resources,
 	}
 }

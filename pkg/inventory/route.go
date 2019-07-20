@@ -1,7 +1,11 @@
 package inventory
 
 import (
+	"fmt"
+
 	osv1 "github.com/openshift/api/route/v1"
+
+	"github.com/jaegertracing/jaeger-operator/pkg/util"
 )
 
 // Route represents the inventory of routes based on the current and desired states
@@ -20,6 +24,7 @@ func ForRoutes(existing []osv1.Route, desired []osv1.Route) Route {
 	for k, v := range mcreate {
 		if t, ok := mdelete[k]; ok {
 			tp := t.DeepCopy()
+			util.InitObjectMeta(tp)
 
 			// we can't blindly DeepCopyInto, so, we select what we bring from the new to the old object
 			tp.Spec = v.Spec
@@ -49,7 +54,7 @@ func ForRoutes(existing []osv1.Route, desired []osv1.Route) Route {
 func routeMap(deps []osv1.Route) map[string]osv1.Route {
 	m := map[string]osv1.Route{}
 	for _, d := range deps {
-		m[d.Name] = d
+		m[fmt.Sprintf("%s.%s", d.Namespace, d.Name)] = d
 	}
 	return m
 }

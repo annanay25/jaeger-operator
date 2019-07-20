@@ -2,12 +2,14 @@ package strategy
 
 import (
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/spf13/viper"
 	"github.com/stretchr/testify/assert"
+	"k8s.io/apimachinery/pkg/types"
 
-	"github.com/jaegertracing/jaeger-operator/pkg/apis/jaegertracing/v1"
+	v1 "github.com/jaegertracing/jaeger-operator/pkg/apis/jaegertracing/v1"
 	"github.com/jaegertracing/jaeger-operator/pkg/storage"
 )
 
@@ -18,7 +20,7 @@ func init() {
 
 func TestCreateAllInOneDeployment(t *testing.T) {
 	name := "TestCreateAllInOneDeployment"
-	c := newAllInOneStrategy(v1.NewJaeger(name))
+	c := newAllInOneStrategy(v1.NewJaeger(types.NamespacedName{Name: name}))
 	assertDeploymentsAndServicesForAllInOne(t, name, c, false, false, false)
 }
 
@@ -27,7 +29,7 @@ func TestCreateAllInOneDeploymentOnOpenShift(t *testing.T) {
 	defer viper.Reset()
 	name := "TestCreateAllInOneDeploymentOnOpenShift"
 
-	jaeger := v1.NewJaeger(name)
+	jaeger := v1.NewJaeger(types.NamespacedName{Name: name})
 	normalize(jaeger)
 
 	c := newAllInOneStrategy(jaeger)
@@ -37,7 +39,7 @@ func TestCreateAllInOneDeploymentOnOpenShift(t *testing.T) {
 func TestCreateAllInOneDeploymentWithDaemonSetAgent(t *testing.T) {
 	name := "TestCreateAllInOneDeploymentWithDaemonSetAgent"
 
-	j := v1.NewJaeger(name)
+	j := v1.NewJaeger(types.NamespacedName{Name: name})
 	j.Spec.Agent.Strategy = "DaemonSet"
 
 	c := newAllInOneStrategy(j)
@@ -47,7 +49,7 @@ func TestCreateAllInOneDeploymentWithDaemonSetAgent(t *testing.T) {
 func TestCreateAllInOneDeploymentWithUIConfigMap(t *testing.T) {
 	name := "TestCreateAllInOneDeploymentWithUIConfigMap"
 
-	j := v1.NewJaeger(name)
+	j := v1.NewJaeger(types.NamespacedName{Name: name})
 	j.Spec.UI.Options = v1.NewFreeForm(map[string]interface{}{
 		"tracking": map[string]interface{}{
 			"gaID": "UA-000000-2",
@@ -60,7 +62,7 @@ func TestCreateAllInOneDeploymentWithUIConfigMap(t *testing.T) {
 
 func TestDelegateAllInOneDependencies(t *testing.T) {
 	// for now, we just have storage dependencies
-	j := v1.NewJaeger("TestDelegateAllInOneDependencies")
+	j := v1.NewJaeger(types.NamespacedName{Name: "TestDelegateAllInOneDependencies"})
 	c := newAllInOneStrategy(j)
 	assert.Equal(t, c.Dependencies(), storage.Dependencies(j))
 }
@@ -93,9 +95,9 @@ func assertDeploymentsAndServicesForAllInOne(t *testing.T, name string, s S, has
 
 	// and these services
 	services := map[string]bool{
-		fmt.Sprintf("%s-agent", name):     false,
-		fmt.Sprintf("%s-collector", name): false,
-		fmt.Sprintf("%s-query", name):     false,
+		fmt.Sprintf("%s-agent", strings.ToLower(name)):     false,
+		fmt.Sprintf("%s-collector", strings.ToLower(name)): false,
+		fmt.Sprintf("%s-query", strings.ToLower(name)):     false,
 	}
 
 	// the ingress rule, if we are not on openshift
@@ -133,15 +135,15 @@ func testSparkDependencies(t *testing.T, fce func(jaeger *v1.Jaeger) S) {
 	}{
 		{jaeger: &v1.Jaeger{Spec: v1.JaegerSpec{
 			Storage: v1.JaegerStorageSpec{Type: "elasticsearch",
-				SparkDependencies: v1.JaegerDependenciesSpec{Enabled: &trueVar}},
+				Dependencies: v1.JaegerDependenciesSpec{Enabled: &trueVar}},
 		}}, sparkCronJobEnabled: true},
 		{jaeger: &v1.Jaeger{Spec: v1.JaegerSpec{
 			Storage: v1.JaegerStorageSpec{Type: "cassandra",
-				SparkDependencies: v1.JaegerDependenciesSpec{Enabled: &trueVar}},
+				Dependencies: v1.JaegerDependenciesSpec{Enabled: &trueVar}},
 		}}, sparkCronJobEnabled: true},
 		{jaeger: &v1.Jaeger{Spec: v1.JaegerSpec{
 			Storage: v1.JaegerStorageSpec{Type: "kafka",
-				SparkDependencies: v1.JaegerDependenciesSpec{Enabled: &trueVar}},
+				Dependencies: v1.JaegerDependenciesSpec{Enabled: &trueVar}},
 		}}, sparkCronJobEnabled: false},
 		{jaeger: &v1.Jaeger{Spec: v1.JaegerSpec{
 			Storage: v1.JaegerStorageSpec{Type: "elasticsearch"},
@@ -166,21 +168,22 @@ func TestEsIndexCleanerAllInOne(t *testing.T) {
 
 func testEsIndexCleaner(t *testing.T, fce func(jaeger *v1.Jaeger) S) {
 	trueVar := true
+	days := 0
 	tests := []struct {
 		jaeger              *v1.Jaeger
 		sparkCronJobEnabled bool
 	}{
 		{jaeger: &v1.Jaeger{Spec: v1.JaegerSpec{
 			Storage: v1.JaegerStorageSpec{Type: "elasticsearch",
-				EsIndexCleaner: v1.JaegerEsIndexCleanerSpec{Enabled: &trueVar}},
+				EsIndexCleaner: v1.JaegerEsIndexCleanerSpec{Enabled: &trueVar, NumberOfDays: &days}},
 		}}, sparkCronJobEnabled: true},
 		{jaeger: &v1.Jaeger{Spec: v1.JaegerSpec{
 			Storage: v1.JaegerStorageSpec{Type: "cassandra",
-				EsIndexCleaner: v1.JaegerEsIndexCleanerSpec{Enabled: &trueVar}},
+				EsIndexCleaner: v1.JaegerEsIndexCleanerSpec{Enabled: &trueVar, NumberOfDays: &days}},
 		}}, sparkCronJobEnabled: false},
 		{jaeger: &v1.Jaeger{Spec: v1.JaegerSpec{
 			Storage: v1.JaegerStorageSpec{Type: "kafka",
-				EsIndexCleaner: v1.JaegerEsIndexCleanerSpec{Enabled: &trueVar}},
+				EsIndexCleaner: v1.JaegerEsIndexCleanerSpec{Enabled: &trueVar, NumberOfDays: &days}},
 		}}, sparkCronJobEnabled: false},
 		{jaeger: &v1.Jaeger{Spec: v1.JaegerSpec{
 			Storage: v1.JaegerStorageSpec{Type: "elasticsearch"},

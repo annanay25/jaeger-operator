@@ -3,6 +3,7 @@ package deployment
 import (
 	"fmt"
 	"sort"
+	"strconv"
 
 	"github.com/spf13/viper"
 	appsv1 "k8s.io/api/apps/v1"
@@ -39,12 +40,18 @@ func (a *AllInOne) Get() *appsv1.Deployment {
 	labels := a.labels()
 	trueVar := true
 
+	args := append(a.jaeger.Spec.AllInOne.Options.ToArgs())
+
+	adminPort := util.GetPort("--admin-http-port=", args, 14269)
+
 	baseCommonSpec := v1.JaegerCommonSpec{
 		Annotations: map[string]string{
 			"prometheus.io/scrape":    "true",
-			"prometheus.io/port":      "16686",
+			"prometheus.io/port":      strconv.Itoa(int(adminPort)),
 			"sidecar.istio.io/inject": "false",
+			"linkerd.io/inject":       "disabled",
 		},
+		Labels: labels,
 	}
 
 	commonSpec := util.Merge([]v1.JaegerCommonSpec{a.jaeger.Spec.AllInOne.JaegerCommonSpec, a.jaeger.Spec.JaegerCommonSpec, baseCommonSpec})
@@ -78,7 +85,7 @@ func (a *AllInOne) Get() *appsv1.Deployment {
 		ObjectMeta: metav1.ObjectMeta{
 			Name:        a.jaeger.Name,
 			Namespace:   a.jaeger.Namespace,
-			Labels:      labels,
+			Labels:      commonSpec.Labels,
 			Annotations: commonSpec.Annotations,
 			OwnerReferences: []metav1.OwnerReference{
 				metav1.OwnerReference{
@@ -96,7 +103,7 @@ func (a *AllInOne) Get() *appsv1.Deployment {
 			},
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{
-					Labels:      labels,
+					Labels:      commonSpec.Labels,
 					Annotations: commonSpec.Annotations,
 				},
 				Spec: corev1.PodSpec{
@@ -152,12 +159,16 @@ func (a *AllInOne) Get() *appsv1.Deployment {
 								ContainerPort: 16686,
 								Name:          "query",
 							},
+							{
+								ContainerPort: adminPort,
+								Name:          "admin-http",
+							},
 						},
 						ReadinessProbe: &corev1.Probe{
 							Handler: corev1.Handler{
 								HTTPGet: &corev1.HTTPGetAction{
 									Path: "/",
-									Port: intstr.FromInt(14269),
+									Port: intstr.FromInt(int(adminPort)),
 								},
 							},
 							InitialDelaySeconds: 1,
@@ -165,7 +176,10 @@ func (a *AllInOne) Get() *appsv1.Deployment {
 						Resources: commonSpec.Resources,
 					}},
 					Volumes:            commonSpec.Volumes,
-					ServiceAccountName: account.JaegerServiceAccountFor(a.jaeger),
+					ServiceAccountName: account.JaegerServiceAccountFor(a.jaeger, account.AllInOneComponent),
+					Affinity:           commonSpec.Affinity,
+					Tolerations:        commonSpec.Tolerations,
+					SecurityContext:    commonSpec.SecurityContext,
 				},
 			},
 		},

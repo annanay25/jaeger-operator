@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"runtime"
-	"strings"
 
 	"github.com/operator-framework/operator-sdk/pkg/k8sutil"
 	"github.com/operator-framework/operator-sdk/pkg/leader"
@@ -12,15 +11,11 @@ import (
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/client-go/discovery"
-	"k8s.io/client-go/rest"
 	"sigs.k8s.io/controller-runtime/pkg/client/config"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/runtime/signals"
 
 	"github.com/jaegertracing/jaeger-operator/pkg/apis"
-	"github.com/jaegertracing/jaeger-operator/pkg/apis/jaegertracing/v1"
 	"github.com/jaegertracing/jaeger-operator/pkg/controller"
 	"github.com/jaegertracing/jaeger-operator/pkg/version"
 )
@@ -65,9 +60,6 @@ func NewStartCommand() *cobra.Command {
 
 	cmd.Flags().String("jaeger-es-rollover-image", "jaegertracing/jaeger-es-rollover", "The Docker image for the Jaeger Elasticsearch Rollover")
 	viper.BindPFlag("jaeger-es-rollover-image", cmd.Flags().Lookup("jaeger-es-rollover-image"))
-
-	cmd.Flags().String("jaeger-elasticsearch-image", "quay.io/openshift/origin-logging-elasticsearch5:latest", "The Docker image for Elasticsearch")
-	viper.BindPFlag("jaeger-elasticsearch-image", cmd.Flags().Lookup("jaeger-elasticsearch-image"))
 
 	cmd.Flags().String("openshift-oauth-proxy-image", "openshift/oauth-proxy:latest", "The Docker image location definition for the OpenShift OAuth Proxy")
 	viper.BindPFlag("openshift-oauth-proxy-image", cmd.Flags().Lookup("openshift-oauth-proxy-image"))
@@ -132,41 +124,6 @@ func start(cmd *cobra.Command, args []string) {
 		log.Fatal(err)
 	}
 
-	apiList, err := availableAPIs(mgr.GetConfig())
-	if err != nil {
-		log.WithError(err).Info("Failed to determine the platform capabilities. Auto-detected properties will fallback to their default values.")
-		viper.Set("platform", v1.FlagPlatformKubernetes)
-		viper.Set("es-provision", v1.FlagProvisionElasticsearchFalse)
-	} else {
-		// detect the platform
-		if strings.EqualFold(viper.GetString("platform"), v1.FlagPlatformAutoDetect) {
-			log.Debug("Attempting to auto-detect the platform")
-			if isOpenShift(apiList) {
-				viper.Set("platform", v1.FlagPlatformOpenShift)
-			} else {
-				viper.Set("platform", v1.FlagPlatformKubernetes)
-			}
-
-			log.WithField("platform", viper.GetString("platform")).Info("Auto-detected the platform")
-		} else {
-			log.WithField("platform", viper.GetString("platform")).Debug("The 'platform' option is explicitly set")
-		}
-
-		// detect whether the Elasticsearch operator is available
-		if strings.EqualFold(viper.GetString("es-provision"), v1.FlagProvisionElasticsearchAuto) {
-			log.Debug("Determining whether we should enable the Elasticsearch Operator integration")
-			if isElasticsearchOperatorAvailable(apiList) {
-				viper.Set("es-provision", v1.FlagProvisionElasticsearchTrue)
-			} else {
-				viper.Set("es-provision", v1.FlagProvisionElasticsearchFalse)
-			}
-
-			log.WithField("es-provision", viper.GetString("es-provision")).Info("Automatically adjusted the 'es-provision' flag")
-		} else {
-			log.WithField("es-provision", viper.GetString("es-provision")).Debug("The 'es-provision' option is explicitly set")
-		}
-	}
-
 	// Setup Scheme for all resources
 	if err := apis.AddToScheme(mgr.GetScheme()); err != nil {
 		log.Fatal(err)
@@ -184,38 +141,4 @@ func start(cmd *cobra.Command, args []string) {
 
 	// Start the Cmd
 	log.Fatal(mgr.Start(signals.SetupSignalHandler()))
-}
-
-func availableAPIs(kubeconfig *rest.Config) (*metav1.APIGroupList, error) {
-	discoveryClient, err := discovery.NewDiscoveryClientForConfig(kubeconfig)
-	if err != nil {
-		return nil, err
-	}
-
-	apiList, err := discoveryClient.ServerGroups()
-	if err != nil {
-		return nil, err
-	}
-
-	return apiList, nil
-}
-
-func isOpenShift(apiList *metav1.APIGroupList) bool {
-	apiGroups := apiList.Groups
-	for i := 0; i < len(apiGroups); i++ {
-		if apiGroups[i].Name == "route.openshift.io" {
-			return true
-		}
-	}
-	return false
-}
-
-func isElasticsearchOperatorAvailable(apiList *metav1.APIGroupList) bool {
-	apiGroups := apiList.Groups
-	for i := 0; i < len(apiGroups); i++ {
-		if apiGroups[i].Name == "logging.openshift.io" {
-			return true
-		}
-	}
-	return false
 }

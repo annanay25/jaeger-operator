@@ -7,8 +7,9 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 
-	"github.com/jaegertracing/jaeger-operator/pkg/apis/jaegertracing/v1"
+	v1 "github.com/jaegertracing/jaeger-operator/pkg/apis/jaegertracing/v1"
 )
 
 func TestRemoveDuplicatedVolumes(t *testing.T) {
@@ -66,6 +67,27 @@ func TestMergeAnnotations(t *testing.T) {
 	assert.Equal(t, "operator", merged.Annotations["name"])
 	assert.Equal(t, "world", merged.Annotations["hello"])
 	assert.Equal(t, "false", merged.Annotations["prometheus.io/scrape"])
+}
+
+func TestMergeLabels(t *testing.T) {
+	generalSpec := v1.JaegerCommonSpec{
+		Labels: map[string]string{
+			"name":  "operator",
+			"hello": "jaeger",
+		},
+	}
+	specificSpec := v1.JaegerCommonSpec{
+		Labels: map[string]string{
+			"hello":   "world", // Override general annotation
+			"another": "false",
+		},
+	}
+
+	merged := Merge([]v1.JaegerCommonSpec{specificSpec, generalSpec})
+
+	assert.Equal(t, "operator", merged.Labels["name"])
+	assert.Equal(t, "world", merged.Labels["hello"])
+	assert.Equal(t, "false", merged.Labels["another"])
 }
 
 func TestMergeMountVolumes(t *testing.T) {
@@ -166,6 +188,87 @@ func TestMergeResourceRequests(t *testing.T) {
 	assert.Equal(t, *resource.NewQuantity(123, resource.DecimalSI), merged.Resources.Requests[corev1.ResourceRequestsEphemeralStorage])
 }
 
+func TestAffinityDefault(t *testing.T) {
+	generalSpec := v1.JaegerCommonSpec{}
+	specificSpec := v1.JaegerCommonSpec{}
+
+	merged := Merge([]v1.JaegerCommonSpec{specificSpec, generalSpec})
+
+	assert.Nil(t, merged.Affinity)
+}
+
+func TestAffinityOverride(t *testing.T) {
+	generalSpec := v1.JaegerCommonSpec{
+		Affinity: &corev1.Affinity{
+			NodeAffinity: &corev1.NodeAffinity{},
+		},
+	}
+	specificSpec := v1.JaegerCommonSpec{
+		Affinity: &corev1.Affinity{
+			PodAffinity: &corev1.PodAffinity{},
+		},
+	}
+
+	merged := Merge([]v1.JaegerCommonSpec{specificSpec, generalSpec})
+
+	assert.NotNil(t, merged.Affinity)
+	assert.NotNil(t, merged.Affinity.PodAffinity)
+	assert.Nil(t, merged.Affinity.NodeAffinity)
+}
+
+func TestSecurityContextDefault(t *testing.T) {
+	generalSpec := v1.JaegerCommonSpec{}
+	specificSpec := v1.JaegerCommonSpec{}
+
+	merged := Merge([]v1.JaegerCommonSpec{specificSpec, generalSpec})
+
+	assert.Nil(t, merged.SecurityContext)
+}
+
+func TestSecurityContextOverride(t *testing.T) {
+	intVal := int64(1000)
+	generalSpec := v1.JaegerCommonSpec{
+		SecurityContext: &corev1.PodSecurityContext{
+			RunAsUser: &intVal,
+		},
+	}
+	specificSpec := v1.JaegerCommonSpec{
+		SecurityContext: &corev1.PodSecurityContext{
+			RunAsGroup: &intVal,
+		},
+	}
+
+	merged := Merge([]v1.JaegerCommonSpec{specificSpec, generalSpec})
+
+	assert.NotNil(t, merged.SecurityContext)
+	assert.NotNil(t, merged.SecurityContext.RunAsGroup)
+	assert.Nil(t, merged.SecurityContext.RunAsUser)
+}
+
+func TestMergeTolerations(t *testing.T) {
+	generalSpec := v1.JaegerCommonSpec{
+		Tolerations: []corev1.Toleration{{
+			Key: "toleration1",
+		}},
+	}
+	specificSpec := v1.JaegerCommonSpec{
+		Tolerations: []corev1.Toleration{{
+			Key: "toleration1",
+		}, {
+			Key: "toleration2",
+		}},
+	}
+
+	merged := Merge([]v1.JaegerCommonSpec{specificSpec, generalSpec})
+
+	// Keys do not need to be unique, so should be aggregation of all tolerations
+	// See https://kubernetes.io/docs/concepts/configuration/taint-and-toleration/ for more details
+	assert.Len(t, merged.Tolerations, 3)
+	assert.Equal(t, "toleration1", merged.Tolerations[0].Key)
+	assert.Equal(t, "toleration2", merged.Tolerations[1].Key)
+	assert.Equal(t, "toleration1", merged.Tolerations[2].Key)
+}
+
 func TestGetEsHostname(t *testing.T) {
 	tests := []struct {
 		underTest map[string]string
@@ -183,7 +286,7 @@ func TestGetEsHostname(t *testing.T) {
 }
 
 func TestAsOwner(t *testing.T) {
-	j := v1.NewJaeger("joe")
+	j := v1.NewJaeger(types.NamespacedName{Name: "joe"})
 	j.Kind = "human"
 	j.APIVersion = "homosapiens"
 	j.UID = "boom!"
@@ -200,7 +303,7 @@ func TestLabels(t *testing.T) {
 		"app.kubernetes.io/component":  "leg",
 		"app.kubernetes.io/part-of":    "jaeger",
 		"app.kubernetes.io/managed-by": "jaeger-operator",
-	}, Labels("joe", "leg", *v1.NewJaeger("thatone")))
+	}, Labels("joe", "leg", *v1.NewJaeger(types.NamespacedName{Name: "thatone"})))
 }
 
 func TestFindItem(t *testing.T) {
@@ -213,4 +316,68 @@ func TestFindItem(t *testing.T) {
 
 	assert.Equal(t, "--reporter.type=thrift", FindItem("--reporter.type=", args))
 	assert.Len(t, FindItem("--c-option", args), 0)
+}
+
+func TestGetPortDefault(t *testing.T) {
+	opts := v1.NewOptions(map[string]interface{}{})
+
+	args := opts.ToArgs()
+
+	assert.Equal(t, int32(1234), GetPort("--processor.jaeger-compact.server-host-port=", args, 1234))
+}
+
+func TestGetPortSpecified(t *testing.T) {
+	opts := v1.NewOptions(map[string]interface{}{
+		"processor.jaeger-compact.server-host-port": ":6831",
+	})
+
+	args := opts.ToArgs()
+
+	assert.Equal(t, int32(6831), GetPort("--processor.jaeger-compact.server-host-port=", args, 1234))
+}
+
+func TestInitObjectMeta(t *testing.T) {
+	tests := map[string]struct {
+		obj metav1.Object
+		exp metav1.Object
+	}{
+		"A object without initialized labels shouldn't have a nil map after initialization.": {
+			obj: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:        "test",
+					Annotations: map[string]string{"gopher": "jaeger"},
+				},
+			},
+			exp: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:        "test",
+					Annotations: map[string]string{"gopher": "jaeger"},
+					Labels:      map[string]string{},
+				},
+			},
+		},
+
+		"A object without initialized annotations shouldn't have a nil map after initialization.": {
+			obj: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:   "test",
+					Labels: map[string]string{"gopher": "jaeger"},
+				},
+			},
+			exp: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:        "test",
+					Labels:      map[string]string{"gopher": "jaeger"},
+					Annotations: map[string]string{},
+				},
+			},
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			InitObjectMeta(test.obj)
+			assert.Equal(t, test.exp, test.obj)
+		})
+	}
 }

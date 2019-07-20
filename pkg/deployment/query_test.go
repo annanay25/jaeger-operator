@@ -9,8 +9,9 @@ import (
 	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
+	"k8s.io/apimachinery/pkg/types"
 
-	"github.com/jaegertracing/jaeger-operator/pkg/apis/jaegertracing/v1"
+	v1 "github.com/jaegertracing/jaeger-operator/pkg/apis/jaegertracing/v1"
 )
 
 func init() {
@@ -19,7 +20,7 @@ func init() {
 }
 
 func TestQueryNegativeSize(t *testing.T) {
-	jaeger := v1.NewJaeger("TestQueryNegativeSize")
+	jaeger := v1.NewJaeger(types.NamespacedName{Name: "TestQueryNegativeSize"})
 	jaeger.Spec.Query.Size = -1
 
 	query := NewQuery(jaeger)
@@ -29,7 +30,7 @@ func TestQueryNegativeSize(t *testing.T) {
 
 func TestQueryNegativeReplicas(t *testing.T) {
 	size := int32(-1)
-	jaeger := v1.NewJaeger("TestQueryNegativeReplicas")
+	jaeger := v1.NewJaeger(types.NamespacedName{Name: "TestQueryNegativeReplicas"})
 	jaeger.Spec.Query.Replicas = &size
 
 	query := NewQuery(jaeger)
@@ -38,7 +39,7 @@ func TestQueryNegativeReplicas(t *testing.T) {
 }
 
 func TestQueryDefaultSize(t *testing.T) {
-	jaeger := v1.NewJaeger("TestQueryDefaultSize")
+	jaeger := v1.NewJaeger(types.NamespacedName{Name: "TestQueryDefaultSize"})
 
 	query := NewQuery(jaeger)
 	dep := query.Get()
@@ -47,7 +48,7 @@ func TestQueryDefaultSize(t *testing.T) {
 
 func TestQueryReplicaSize(t *testing.T) {
 	size := int32(0)
-	jaeger := v1.NewJaeger("TestQueryReplicaSize")
+	jaeger := v1.NewJaeger(types.NamespacedName{Name: "TestQueryReplicaSize"})
 	jaeger.Spec.Query.Replicas = &size
 
 	ingester := NewQuery(jaeger)
@@ -56,7 +57,7 @@ func TestQueryReplicaSize(t *testing.T) {
 }
 
 func TestQuerySize(t *testing.T) {
-	jaeger := v1.NewJaeger("TestQuerySize")
+	jaeger := v1.NewJaeger(types.NamespacedName{Name: "TestQuerySize"})
 	jaeger.Spec.Query.Size = 2
 
 	query := NewQuery(jaeger)
@@ -66,7 +67,7 @@ func TestQuerySize(t *testing.T) {
 
 func TestQueryReplicaWinsOverSize(t *testing.T) {
 	size := int32(3)
-	jaeger := v1.NewJaeger("TestQueryReplicaWinsOverSize")
+	jaeger := v1.NewJaeger(types.NamespacedName{Name: "TestQueryReplicaWinsOverSize"})
 	jaeger.Spec.Query.Size = 2
 	jaeger.Spec.Query.Replicas = &size
 
@@ -80,7 +81,7 @@ func TestDefaultQueryImage(t *testing.T) {
 	viper.Set("jaeger-version", "123")
 	defer viper.Reset()
 
-	query := NewQuery(v1.NewJaeger("TestQueryImage"))
+	query := NewQuery(v1.NewJaeger(types.NamespacedName{Name: "TestQueryImage"}))
 	dep := query.Get()
 	containers := dep.Spec.Template.Spec.Containers
 
@@ -89,7 +90,7 @@ func TestDefaultQueryImage(t *testing.T) {
 }
 
 func TestQueryAnnotations(t *testing.T) {
-	jaeger := v1.NewJaeger("TestQueryAnnotations")
+	jaeger := v1.NewJaeger(types.NamespacedName{Name: "TestQueryAnnotations"})
 	jaeger.Spec.Annotations = map[string]string{
 		"name":  "operator",
 		"hello": "jaeger",
@@ -106,10 +107,30 @@ func TestQueryAnnotations(t *testing.T) {
 	assert.Equal(t, "false", dep.Spec.Template.Annotations["sidecar.istio.io/inject"])
 	assert.Equal(t, "world", dep.Spec.Template.Annotations["hello"])
 	assert.Equal(t, "false", dep.Spec.Template.Annotations["prometheus.io/scrape"])
+	assert.Equal(t, "disabled", dep.Spec.Template.Annotations["linkerd.io/inject"])
+}
+
+func TestQueryLabels(t *testing.T) {
+	jaeger := v1.NewJaeger(types.NamespacedName{Name: "TestQueryLabels"})
+	jaeger.Spec.Labels = map[string]string{
+		"name":  "operator",
+		"hello": "jaeger",
+	}
+	jaeger.Spec.Query.Labels = map[string]string{
+		"hello":   "world", // Override top level annotation
+		"another": "false",
+	}
+
+	query := NewQuery(jaeger)
+	dep := query.Get()
+
+	assert.Equal(t, "operator", dep.Spec.Template.Labels["name"])
+	assert.Equal(t, "world", dep.Spec.Template.Labels["hello"])
+	assert.Equal(t, "false", dep.Spec.Template.Labels["another"])
 }
 
 func TestQuerySecrets(t *testing.T) {
-	jaeger := v1.NewJaeger("TestQuerySecrets")
+	jaeger := v1.NewJaeger(types.NamespacedName{Name: "TestQuerySecrets"})
 	secret := "mysecret"
 	jaeger.Spec.Storage.SecretName = secret
 
@@ -121,14 +142,14 @@ func TestQuerySecrets(t *testing.T) {
 
 func TestQueryPodName(t *testing.T) {
 	name := "TestQueryPodName"
-	query := NewQuery(v1.NewJaeger(name))
+	query := NewQuery(v1.NewJaeger(types.NamespacedName{Name: name}))
 	dep := query.Get()
 
 	assert.Contains(t, dep.ObjectMeta.Name, fmt.Sprintf("%s-query", name))
 }
 
 func TestQueryServices(t *testing.T) {
-	query := NewQuery(v1.NewJaeger("TestQueryServices"))
+	query := NewQuery(v1.NewJaeger(types.NamespacedName{Name: "TestQueryServices"}))
 	svcs := query.Services()
 
 	assert.Len(t, svcs, 1)
@@ -163,7 +184,7 @@ func TestQueryVolumeMountsWithVolumes(t *testing.T) {
 		},
 	}
 
-	jaeger := v1.NewJaeger(name)
+	jaeger := v1.NewJaeger(types.NamespacedName{Name: name})
 	jaeger.Spec.Volumes = globalVolumes
 	jaeger.Spec.VolumeMounts = globalVolumeMounts
 	jaeger.Spec.Query.Volumes = queryVolumes
@@ -197,7 +218,7 @@ func TestQueryMountGlobalVolumes(t *testing.T) {
 		},
 	}
 
-	jaeger := v1.NewJaeger(name)
+	jaeger := v1.NewJaeger(types.NamespacedName{Name: name})
 	jaeger.Spec.Volumes = globalVolumes
 	jaeger.Spec.Query.VolumeMounts = queryVolumeMounts
 	podSpec := NewQuery(jaeger).Get().Spec.Template.Spec
@@ -224,7 +245,7 @@ func TestQueryVolumeMountsWithSameName(t *testing.T) {
 		},
 	}
 
-	jaeger := v1.NewJaeger(name)
+	jaeger := v1.NewJaeger(types.NamespacedName{Name: name})
 	jaeger.Spec.VolumeMounts = globalVolumeMounts
 	jaeger.Spec.Query.VolumeMounts = queryVolumeMounts
 	podSpec := NewQuery(jaeger).Get().Spec.Template.Spec
@@ -251,7 +272,7 @@ func TestQueryVolumeWithSameName(t *testing.T) {
 		},
 	}
 
-	jaeger := v1.NewJaeger(name)
+	jaeger := v1.NewJaeger(types.NamespacedName{Name: name})
 	jaeger.Spec.Volumes = globalVolumes
 	jaeger.Spec.Query.Volumes = queryVolumes
 	podSpec := NewQuery(jaeger).Get().Spec.Template.Spec
@@ -262,7 +283,7 @@ func TestQueryVolumeWithSameName(t *testing.T) {
 }
 
 func TestQueryResources(t *testing.T) {
-	jaeger := v1.NewJaeger("TestQueryResources")
+	jaeger := v1.NewJaeger(types.NamespacedName{Name: "TestQueryResources"})
 	jaeger.Spec.Resources = corev1.ResourceRequirements{
 		Limits: corev1.ResourceList{
 			corev1.ResourceLimitsCPU:              *resource.NewQuantity(1024, resource.BinarySI),
@@ -295,8 +316,8 @@ func TestQueryResources(t *testing.T) {
 	assert.Equal(t, *resource.NewQuantity(512, resource.DecimalSI), dep.Spec.Template.Spec.Containers[0].Resources.Requests[corev1.ResourceRequestsEphemeralStorage])
 }
 
-func TestQueryLabels(t *testing.T) {
-	query := NewQuery(v1.NewJaeger("TestQueryLabels"))
+func TestQueryStandardLabels(t *testing.T) {
+	query := NewQuery(v1.NewJaeger(types.NamespacedName{Name: "TestQueryStandardLabels"}))
 	dep := query.Get()
 	assert.Equal(t, "jaeger-operator", dep.Spec.Template.Labels["app.kubernetes.io/managed-by"])
 	assert.Equal(t, "query", dep.Spec.Template.Labels["app.kubernetes.io/component"])
@@ -305,7 +326,7 @@ func TestQueryLabels(t *testing.T) {
 }
 
 func TestQueryOrderOfArguments(t *testing.T) {
-	jaeger := v1.NewJaeger("TestQueryOrderOfArguments")
+	jaeger := v1.NewJaeger(types.NamespacedName{Name: "TestQueryOrderOfArguments"})
 	jaeger.Spec.Query.Options = v1.NewOptions(map[string]interface{}{
 		"b-option": "b-value",
 		"a-option": "a-value",

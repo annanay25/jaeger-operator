@@ -9,9 +9,14 @@ import (
 	"github.com/spf13/viper"
 	corev1 "k8s.io/api/core/v1"
 
-	"github.com/jaegertracing/jaeger-operator/pkg/apis/jaegertracing/v1"
+	v1 "github.com/jaegertracing/jaeger-operator/pkg/apis/jaegertracing/v1"
 	"github.com/jaegertracing/jaeger-operator/pkg/cronjob"
 	"github.com/jaegertracing/jaeger-operator/pkg/storage"
+	esv1 "github.com/jaegertracing/jaeger-operator/pkg/storage/elasticsearch/v1"
+)
+
+const (
+	esCertGenerationScript = "./scripts/cert_generation.sh"
 )
 
 // For returns the appropriate Strategy for the given Jaeger instance
@@ -32,7 +37,8 @@ func For(ctx context.Context, jaeger *v1.Jaeger, secrets []corev1.Secret) S {
 		return newStreamingStrategy(jaeger)
 	}
 
-	return newProductionStrategy(jaeger, secrets)
+	es := &storage.ElasticsearchDeployment{Jaeger: jaeger, CertScript: esCertGenerationScript, Secrets: secrets}
+	return newProductionStrategy(jaeger, es)
 }
 
 // normalize changes the incoming Jaeger object so that the defaults are applied when
@@ -84,23 +90,23 @@ func normalize(jaeger *v1.Jaeger) {
 	normalizeSparkDependencies(&jaeger.Spec.Storage)
 	normalizeIndexCleaner(&jaeger.Spec.Storage.EsIndexCleaner, jaeger.Spec.Storage.Type)
 	normalizeElasticsearch(&jaeger.Spec.Storage.Elasticsearch)
-	normalizeRollover(&jaeger.Spec.Storage.Rollover)
+	normalizeRollover(&jaeger.Spec.Storage.EsRollover)
 	normalizeUI(&jaeger.Spec)
 }
 
 func normalizeSparkDependencies(spec *v1.JaegerStorageSpec) {
 	// auto enable only for supported storages
 	if cronjob.SupportedStorage(spec.Type) &&
-		spec.SparkDependencies.Enabled == nil &&
+		spec.Dependencies.Enabled == nil &&
 		!storage.ShouldDeployElasticsearch(*spec) {
 		trueVar := true
-		spec.SparkDependencies.Enabled = &trueVar
+		spec.Dependencies.Enabled = &trueVar
 	}
-	if spec.SparkDependencies.Image == "" {
-		spec.SparkDependencies.Image = viper.GetString("jaeger-spark-dependencies-image")
+	if spec.Dependencies.Image == "" {
+		spec.Dependencies.Image = viper.GetString("jaeger-spark-dependencies-image")
 	}
-	if spec.SparkDependencies.Schedule == "" {
-		spec.SparkDependencies.Schedule = "55 23 * * *"
+	if spec.Dependencies.Schedule == "" {
+		spec.Dependencies.Schedule = "55 23 * * *"
 	}
 }
 
@@ -116,8 +122,9 @@ func normalizeIndexCleaner(spec *v1.JaegerEsIndexCleanerSpec, storage string) {
 	if spec.Schedule == "" {
 		spec.Schedule = "55 23 * * *"
 	}
-	if spec.NumberOfDays == 0 {
-		spec.NumberOfDays = 7
+	if spec.NumberOfDays == nil {
+		defDays := 7
+		spec.NumberOfDays = &defDays
 	}
 }
 
@@ -125,8 +132,12 @@ func normalizeElasticsearch(spec *v1.ElasticsearchSpec) {
 	if spec.NodeCount == 0 {
 		spec.NodeCount = 1
 	}
-	if spec.Image == "" {
-		spec.Image = viper.GetString("jaeger-elasticsearch-image")
+	if spec.RedundancyPolicy == "" {
+		if spec.NodeCount == 1 {
+			spec.RedundancyPolicy = esv1.ZeroRedundancy
+		} else {
+			spec.RedundancyPolicy = esv1.SingleRedundancy
+		}
 	}
 }
 
@@ -147,7 +158,7 @@ func normalizeUI(spec *v1.JaegerSpec) {
 		}
 	}
 	enableArchiveButton(uiOpts, spec.Storage.Options.Map())
-	disableDependenciesTab(uiOpts, spec.Storage.Type, spec.Storage.SparkDependencies.Enabled)
+	disableDependenciesTab(uiOpts, spec.Storage.Type, spec.Storage.Dependencies.Enabled)
 	enableLogOut(uiOpts, spec)
 	if len(uiOpts) > 0 {
 		spec.UI.Options = v1.NewFreeForm(uiOpts)

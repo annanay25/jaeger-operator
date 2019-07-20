@@ -10,8 +10,9 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 
-	"github.com/jaegertracing/jaeger-operator/pkg/apis/jaegertracing/v1"
+	v1 "github.com/jaegertracing/jaeger-operator/pkg/apis/jaegertracing/v1"
 )
 
 func init() {
@@ -20,7 +21,7 @@ func init() {
 }
 
 func TestIngesterNotDefined(t *testing.T) {
-	jaeger := v1.NewJaeger("TestIngesterNotDefined")
+	jaeger := v1.NewJaeger(types.NamespacedName{Name: "TestIngesterNotDefined"})
 
 	ingester := NewIngester(jaeger)
 	assert.Nil(t, ingester.Get())
@@ -129,6 +130,26 @@ func TestIngesterAnnotations(t *testing.T) {
 	assert.Equal(t, "false", dep.Spec.Template.Annotations["sidecar.istio.io/inject"])
 	assert.Equal(t, "world", dep.Spec.Template.Annotations["hello"])
 	assert.Equal(t, "false", dep.Spec.Template.Annotations["prometheus.io/scrape"])
+	assert.Equal(t, "disabled", dep.Spec.Template.Annotations["linkerd.io/inject"])
+}
+
+func TestIngesterLabels(t *testing.T) {
+	jaeger := newIngesterJaeger("TestIngesterLabels")
+	jaeger.Spec.Labels = map[string]string{
+		"name":  "operator",
+		"hello": "jaeger",
+	}
+	jaeger.Spec.Ingester.Labels = map[string]string{
+		"hello":   "world", // Override top level annotation
+		"another": "false",
+	}
+
+	ingester := NewIngester(jaeger)
+	dep := ingester.Get()
+
+	assert.Equal(t, "operator", dep.Spec.Template.Labels["name"])
+	assert.Equal(t, "world", dep.Spec.Template.Labels["hello"])
+	assert.Equal(t, "false", dep.Spec.Template.Labels["another"])
 }
 
 func TestIngesterSecrets(t *testing.T) {
@@ -312,13 +333,13 @@ func TestIngesterWithStorageType(t *testing.T) {
 			Strategy: "streaming",
 			Ingester: v1.JaegerIngesterSpec{
 				Options: v1.NewOptions(map[string]interface{}{
-					"kafka.topic": "mytopic",
+					"kafka.consumer.topic":   "mytopic",
+					"kafka.consumer.brokers": "http://brokers",
 				}),
 			},
 			Storage: v1.JaegerStorageSpec{
 				Type: "elasticsearch",
 				Options: v1.NewOptions(map[string]interface{}{
-					"kafka.brokers":  "http://brokers",
 					"es.server-urls": "http://somewhere",
 				}),
 			},
@@ -336,12 +357,12 @@ func TestIngesterWithStorageType(t *testing.T) {
 	assert.Equal(t, envvars, dep.Spec.Template.Spec.Containers[0].Env)
 	assert.Len(t, dep.Spec.Template.Spec.Containers[0].Args, 3)
 	assert.Equal(t, "--es.server-urls=http://somewhere", dep.Spec.Template.Spec.Containers[0].Args[0])
-	assert.Equal(t, "--kafka.brokers=http://brokers", dep.Spec.Template.Spec.Containers[0].Args[1])
-	assert.Equal(t, "--kafka.topic=mytopic", dep.Spec.Template.Spec.Containers[0].Args[2])
+	assert.Equal(t, "--kafka.consumer.brokers=http://brokers", dep.Spec.Template.Spec.Containers[0].Args[1])
+	assert.Equal(t, "--kafka.consumer.topic=mytopic", dep.Spec.Template.Spec.Containers[0].Args[2])
 }
 
-func TestIngesterLabels(t *testing.T) {
-	ingester := NewIngester(newIngesterJaeger("TestIngesterLabels"))
+func TestIngesterStandardLabels(t *testing.T) {
+	ingester := NewIngester(newIngesterJaeger("TestIngesterStandardLabels"))
 	dep := ingester.Get()
 	assert.Equal(t, "jaeger-operator", dep.Spec.Template.Labels["app.kubernetes.io/managed-by"])
 	assert.Equal(t, "ingester", dep.Spec.Template.Labels["app.kubernetes.io/component"])

@@ -1,7 +1,11 @@
 package inventory
 
 import (
+	"fmt"
+
 	batchv1beta1 "k8s.io/api/batch/v1beta1"
+
+	"github.com/jaegertracing/jaeger-operator/pkg/util"
 )
 
 // CronJob represents the inventory of cronjobs based on the current and desired states
@@ -20,6 +24,7 @@ func ForCronJobs(existing []batchv1beta1.CronJob, desired []batchv1beta1.CronJob
 	for k, v := range mcreate {
 		if t, ok := mdelete[k]; ok {
 			tp := t.DeepCopy()
+			util.InitObjectMeta(tp)
 
 			// we can't blindly DeepCopyInto, so, we select what we bring from the new to the old object
 			tp.Spec = v.Spec
@@ -49,7 +54,7 @@ func ForCronJobs(existing []batchv1beta1.CronJob, desired []batchv1beta1.CronJob
 func jobsMap(deps []batchv1beta1.CronJob) map[string]batchv1beta1.CronJob {
 	m := map[string]batchv1beta1.CronJob{}
 	for _, d := range deps {
-		m[d.Name] = d
+		m[fmt.Sprintf("%s.%s", d.Namespace, d.Name)] = d
 	}
 	return m
 }

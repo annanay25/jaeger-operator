@@ -10,8 +10,9 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 
-	"github.com/jaegertracing/jaeger-operator/pkg/apis/jaegertracing/v1"
+	v1 "github.com/jaegertracing/jaeger-operator/pkg/apis/jaegertracing/v1"
 )
 
 func init() {
@@ -20,7 +21,7 @@ func init() {
 }
 
 func TestNegativeSize(t *testing.T) {
-	jaeger := v1.NewJaeger("TestNegativeSize")
+	jaeger := v1.NewJaeger(types.NamespacedName{Name: "TestNegativeSize"})
 	jaeger.Spec.Collector.Size = -1
 
 	collector := NewCollector(jaeger)
@@ -30,7 +31,7 @@ func TestNegativeSize(t *testing.T) {
 
 func TestNegativeReplicas(t *testing.T) {
 	size := int32(-1)
-	jaeger := v1.NewJaeger("TestNegativeReplicas")
+	jaeger := v1.NewJaeger(types.NamespacedName{Name: "TestNegativeReplicas"})
 	jaeger.Spec.Collector.Replicas = &size
 
 	collector := NewCollector(jaeger)
@@ -39,7 +40,7 @@ func TestNegativeReplicas(t *testing.T) {
 }
 
 func TestDefaultSize(t *testing.T) {
-	jaeger := v1.NewJaeger("TestDefaultSize")
+	jaeger := v1.NewJaeger(types.NamespacedName{Name: "TestDefaultSize"})
 
 	collector := NewCollector(jaeger)
 	dep := collector.Get()
@@ -48,7 +49,7 @@ func TestDefaultSize(t *testing.T) {
 
 func TestReplicaSize(t *testing.T) {
 	size := int32(0)
-	jaeger := v1.NewJaeger("TestReplicaSize")
+	jaeger := v1.NewJaeger(types.NamespacedName{Name: "TestReplicaSize"})
 	jaeger.Spec.Collector.Replicas = &size
 
 	collector := NewCollector(jaeger)
@@ -57,7 +58,7 @@ func TestReplicaSize(t *testing.T) {
 }
 
 func TestSize(t *testing.T) {
-	jaeger := v1.NewJaeger("TestSize")
+	jaeger := v1.NewJaeger(types.NamespacedName{Name: "TestSize"})
 	jaeger.Spec.Collector.Size = 2
 
 	collector := NewCollector(jaeger)
@@ -67,7 +68,7 @@ func TestSize(t *testing.T) {
 
 func TestReplicaWinsOverSize(t *testing.T) {
 	size := int32(3)
-	jaeger := v1.NewJaeger("TestReplicaWinsOverSize")
+	jaeger := v1.NewJaeger(types.NamespacedName{Name: "TestReplicaWinsOverSize"})
 	jaeger.Spec.Collector.Size = 2
 	jaeger.Spec.Collector.Replicas = &size
 
@@ -77,13 +78,13 @@ func TestReplicaWinsOverSize(t *testing.T) {
 }
 
 func TestName(t *testing.T) {
-	collector := NewCollector(v1.NewJaeger("TestName"))
+	collector := NewCollector(v1.NewJaeger(types.NamespacedName{Name: "TestName"}))
 	dep := collector.Get()
 	assert.Equal(t, "TestName-collector", dep.ObjectMeta.Name)
 }
 
 func TestCollectorServices(t *testing.T) {
-	collector := NewCollector(v1.NewJaeger("TestName"))
+	collector := NewCollector(v1.NewJaeger(types.NamespacedName{Name: "TestName"}))
 	svcs := collector.Services()
 	assert.Len(t, svcs, 2) // headless and cluster IP
 }
@@ -93,7 +94,7 @@ func TestDefaultCollectorImage(t *testing.T) {
 	viper.Set("jaeger-version", "123")
 	defer viper.Reset()
 
-	collector := NewCollector(v1.NewJaeger("TestCollectorImage"))
+	collector := NewCollector(v1.NewJaeger(types.NamespacedName{Name: "TestCollectorImage"}))
 	dep := collector.Get()
 
 	containers := dep.Spec.Template.Spec.Containers
@@ -114,7 +115,7 @@ func TestDefaultCollectorImage(t *testing.T) {
 }
 
 func TestCollectorAnnotations(t *testing.T) {
-	jaeger := v1.NewJaeger("TestCollectorAnnotations")
+	jaeger := v1.NewJaeger(types.NamespacedName{Name: "TestCollectorAnnotations"})
 	jaeger.Spec.Annotations = map[string]string{
 		"name":  "operator",
 		"hello": "jaeger",
@@ -131,10 +132,30 @@ func TestCollectorAnnotations(t *testing.T) {
 	assert.Equal(t, "false", dep.Spec.Template.Annotations["sidecar.istio.io/inject"])
 	assert.Equal(t, "world", dep.Spec.Template.Annotations["hello"])
 	assert.Equal(t, "false", dep.Spec.Template.Annotations["prometheus.io/scrape"])
+	assert.Equal(t, "disabled", dep.Spec.Template.Annotations["linkerd.io/inject"])
+}
+
+func TestCollectorLabels(t *testing.T) {
+	jaeger := v1.NewJaeger(types.NamespacedName{Name: "TestCollectorLabels"})
+	jaeger.Spec.Labels = map[string]string{
+		"name":  "operator",
+		"hello": "jaeger",
+	}
+	jaeger.Spec.Collector.Labels = map[string]string{
+		"hello":   "world", // Override top level annotation
+		"another": "false",
+	}
+
+	collector := NewCollector(jaeger)
+	dep := collector.Get()
+
+	assert.Equal(t, "operator", dep.Spec.Template.Labels["name"])
+	assert.Equal(t, "world", dep.Spec.Template.Labels["hello"])
+	assert.Equal(t, "false", dep.Spec.Template.Labels["another"])
 }
 
 func TestCollectorSecrets(t *testing.T) {
-	jaeger := v1.NewJaeger("TestCollectorSecrets")
+	jaeger := v1.NewJaeger(types.NamespacedName{Name: "TestCollectorSecrets"})
 	secret := "mysecret"
 	jaeger.Spec.Storage.SecretName = secret
 
@@ -173,7 +194,7 @@ func TestCollectorVolumeMountsWithVolumes(t *testing.T) {
 		},
 	}
 
-	jaeger := v1.NewJaeger(name)
+	jaeger := v1.NewJaeger(types.NamespacedName{Name: name})
 	jaeger.Spec.Volumes = globalVolumes
 	jaeger.Spec.VolumeMounts = globalVolumeMounts
 	jaeger.Spec.Collector.Volumes = collectorVolumes
@@ -208,7 +229,7 @@ func TestCollectorMountGlobalVolumes(t *testing.T) {
 		},
 	}
 
-	jaeger := v1.NewJaeger(name)
+	jaeger := v1.NewJaeger(types.NamespacedName{Name: name})
 	jaeger.Spec.Volumes = globalVolumes
 	jaeger.Spec.Collector.VolumeMounts = collectorVolumeMounts
 	podSpec := NewCollector(jaeger).Get().Spec.Template.Spec
@@ -236,7 +257,7 @@ func TestCollectorVolumeMountsWithSameName(t *testing.T) {
 		},
 	}
 
-	jaeger := v1.NewJaeger(name)
+	jaeger := v1.NewJaeger(types.NamespacedName{Name: name})
 	jaeger.Spec.VolumeMounts = globalVolumeMounts
 	jaeger.Spec.Collector.VolumeMounts = collectorVolumeMounts
 	podSpec := NewCollector(jaeger).Get().Spec.Template.Spec
@@ -264,7 +285,7 @@ func TestCollectorVolumeWithSameName(t *testing.T) {
 		},
 	}
 
-	jaeger := v1.NewJaeger(name)
+	jaeger := v1.NewJaeger(types.NamespacedName{Name: name})
 	jaeger.Spec.Volumes = globalVolumes
 	jaeger.Spec.Collector.Volumes = collectorVolumes
 	podSpec := NewCollector(jaeger).Get().Spec.Template.Spec
@@ -276,7 +297,7 @@ func TestCollectorVolumeWithSameName(t *testing.T) {
 }
 
 func TestCollectorResources(t *testing.T) {
-	jaeger := v1.NewJaeger("TestCollectorResources")
+	jaeger := v1.NewJaeger(types.NamespacedName{Name: "TestCollectorResources"})
 	jaeger.Spec.Resources = corev1.ResourceRequirements{
 		Limits: corev1.ResourceList{
 			corev1.ResourceLimitsCPU:              *resource.NewQuantity(1024, resource.BinarySI),
@@ -309,8 +330,8 @@ func TestCollectorResources(t *testing.T) {
 	assert.Equal(t, *resource.NewQuantity(512, resource.DecimalSI), dep.Spec.Template.Spec.Containers[0].Resources.Requests[corev1.ResourceRequestsEphemeralStorage])
 }
 
-func TestCollectorLabels(t *testing.T) {
-	c := NewCollector(v1.NewJaeger("TestCollectorLabels"))
+func TestCollectorStandardLabels(t *testing.T) {
+	c := NewCollector(v1.NewJaeger(types.NamespacedName{Name: "TestCollectorStandardLabels"}))
 	dep := c.Get()
 	assert.Equal(t, "jaeger-operator", dep.Spec.Template.Labels["app.kubernetes.io/managed-by"])
 	assert.Equal(t, "collector", dep.Spec.Template.Labels["app.kubernetes.io/component"])
@@ -350,23 +371,23 @@ func TestCollectorWithDirectStorageType(t *testing.T) {
 	assert.Equal(t, "--es.server-urls=http://somewhere", dep.Spec.Template.Spec.Containers[0].Args[0])
 }
 
-func TestCollectorWithIngesterStorageType(t *testing.T) {
+func TestCollectorWithKafkaStorageType(t *testing.T) {
 	jaeger := &v1.Jaeger{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "TestCollectorWithIngesterStorageType",
 		},
 		Spec: v1.JaegerSpec{
 			Strategy: "streaming",
-			Ingester: v1.JaegerIngesterSpec{
+			Collector: v1.JaegerCollectorSpec{
 				Options: v1.NewOptions(map[string]interface{}{
-					"kafka.topic": "mytopic",
+					"kafka.producer.topic": "mytopic",
 				}),
 			},
 			Storage: v1.JaegerStorageSpec{
 				Type: "elasticsearch",
 				Options: v1.NewOptions(map[string]interface{}{
-					"kafka.brokers":  "http://brokers",
-					"es.server-urls": "http://somewhere",
+					"kafka.producer.brokers": "http://brokers",
+					"es.server-urls":         "http://somewhere",
 				}),
 			},
 		},
@@ -386,8 +407,8 @@ func TestCollectorWithIngesterStorageType(t *testing.T) {
 	}
 	assert.Equal(t, envvars, dep.Spec.Template.Spec.Containers[0].Env)
 	assert.Len(t, dep.Spec.Template.Spec.Containers[0].Args, 3)
-	assert.Equal(t, "--kafka.brokers=http://brokers", dep.Spec.Template.Spec.Containers[0].Args[0])
-	assert.Equal(t, "--kafka.topic=mytopic", dep.Spec.Template.Spec.Containers[0].Args[1])
+	assert.Equal(t, "--kafka.producer.brokers=http://brokers", dep.Spec.Template.Spec.Containers[0].Args[0])
+	assert.Equal(t, "--kafka.producer.topic=mytopic", dep.Spec.Template.Spec.Containers[0].Args[1])
 }
 
 func TestCollectorWithIngesterNoOptionsStorageType(t *testing.T) {
@@ -425,7 +446,7 @@ func TestCollectorWithIngesterNoOptionsStorageType(t *testing.T) {
 }
 
 func TestCollectorOrderOfArguments(t *testing.T) {
-	jaeger := v1.NewJaeger("TestCollectorOrderOfArguments")
+	jaeger := v1.NewJaeger(types.NamespacedName{Name: "TestCollectorOrderOfArguments"})
 	jaeger.Spec.Collector.Options = v1.NewOptions(map[string]interface{}{
 		"b-option": "b-value",
 		"a-option": "a-value",

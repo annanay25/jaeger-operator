@@ -3,6 +3,7 @@ package deployment
 import (
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/spf13/viper"
@@ -52,12 +53,18 @@ func (i *Ingester) Get() *appsv1.Deployment {
 	labels := i.labels()
 	trueVar := true
 
+	args := append(i.jaeger.Spec.Ingester.Options.ToArgs())
+
+	adminPort := util.GetPort("--admin-http-port=", args, 14270)
+
 	baseCommonSpec := v1.JaegerCommonSpec{
 		Annotations: map[string]string{
 			"prometheus.io/scrape":    "true",
-			"prometheus.io/port":      "14271",
+			"prometheus.io/port":      strconv.Itoa(int(adminPort)),
 			"sidecar.istio.io/inject": "false",
+			"linkerd.io/inject":       "disabled",
 		},
+		Labels: labels,
 	}
 
 	commonSpec := util.Merge([]v1.JaegerCommonSpec{i.jaeger.Spec.Ingester.JaegerCommonSpec, i.jaeger.Spec.JaegerCommonSpec, baseCommonSpec})
@@ -74,8 +81,7 @@ func (i *Ingester) Get() *appsv1.Deployment {
 	}
 
 	options := allArgs(i.jaeger.Spec.Ingester.Options,
-		i.jaeger.Spec.Storage.Options.Filter(storage.OptionsPrefix(i.jaeger.Spec.Storage.Type)),
-		i.jaeger.Spec.Storage.Options.Filter("kafka"))
+		i.jaeger.Spec.Storage.Options.Filter(storage.OptionsPrefix(i.jaeger.Spec.Storage.Type)))
 
 	// ensure we have a consistent order of the arguments
 	// see https://github.com/jaegertracing/jaeger-operator/issues/334
@@ -89,7 +95,7 @@ func (i *Ingester) Get() *appsv1.Deployment {
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      i.name(),
 			Namespace: i.jaeger.Namespace,
-			Labels:    labels,
+			Labels:    commonSpec.Labels,
 			OwnerReferences: []metav1.OwnerReference{
 				metav1.OwnerReference{
 					APIVersion: i.jaeger.APIVersion,
@@ -107,7 +113,7 @@ func (i *Ingester) Get() *appsv1.Deployment {
 			},
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{
-					Labels:      labels,
+					Labels:      commonSpec.Labels,
 					Annotations: commonSpec.Annotations,
 				},
 				Spec: corev1.PodSpec{
@@ -125,19 +131,15 @@ func (i *Ingester) Get() *appsv1.Deployment {
 						EnvFrom:      envFromSource,
 						Ports: []corev1.ContainerPort{
 							{
-								ContainerPort: 14270,
-								Name:          "hc-http",
-							},
-							{
-								ContainerPort: 14271,
-								Name:          "metrics-http",
+								ContainerPort: adminPort,
+								Name:          "admin-http",
 							},
 						},
 						ReadinessProbe: &corev1.Probe{
 							Handler: corev1.Handler{
 								HTTPGet: &corev1.HTTPGetAction{
 									Path: "/",
-									Port: intstr.FromInt(14270),
+									Port: intstr.FromInt(int(adminPort)),
 								},
 							},
 							InitialDelaySeconds: 1,
@@ -145,7 +147,10 @@ func (i *Ingester) Get() *appsv1.Deployment {
 						Resources: commonSpec.Resources,
 					}},
 					Volumes:            commonSpec.Volumes,
-					ServiceAccountName: account.JaegerServiceAccountFor(i.jaeger),
+					ServiceAccountName: account.JaegerServiceAccountFor(i.jaeger, account.IngesterComponent),
+					Affinity:           commonSpec.Affinity,
+					Tolerations:        commonSpec.Tolerations,
+					SecurityContext:    commonSpec.SecurityContext,
 				},
 			},
 		},

@@ -6,12 +6,12 @@ import (
 	"github.com/spf13/viper"
 	appsv1 "k8s.io/api/apps/v1"
 	batchv1beta1 "k8s.io/api/batch/v1beta1"
-	corev1 "k8s.io/api/core/v1"
 
 	"github.com/jaegertracing/jaeger-operator/pkg/account"
-	"github.com/jaegertracing/jaeger-operator/pkg/apis/jaegertracing/v1"
+	v1 "github.com/jaegertracing/jaeger-operator/pkg/apis/jaegertracing/v1"
+	crb "github.com/jaegertracing/jaeger-operator/pkg/clusterrolebinding"
 	"github.com/jaegertracing/jaeger-operator/pkg/config/sampling"
-	"github.com/jaegertracing/jaeger-operator/pkg/config/ui"
+	configmap "github.com/jaegertracing/jaeger-operator/pkg/config/ui"
 	"github.com/jaegertracing/jaeger-operator/pkg/cronjob"
 	"github.com/jaegertracing/jaeger-operator/pkg/deployment"
 	"github.com/jaegertracing/jaeger-operator/pkg/ingress"
@@ -20,7 +20,7 @@ import (
 	"github.com/jaegertracing/jaeger-operator/pkg/storage"
 )
 
-func newProductionStrategy(jaeger *v1.Jaeger, existingSecrets []corev1.Secret) S {
+func newProductionStrategy(jaeger *v1.Jaeger, es *storage.ElasticsearchDeployment) S {
 	c := S{typ: Production}
 	collector := deployment.NewCollector(jaeger)
 	query := deployment.NewQuery(jaeger)
@@ -30,6 +30,9 @@ func newProductionStrategy(jaeger *v1.Jaeger, existingSecrets []corev1.Secret) S
 	for _, acc := range account.Get(jaeger) {
 		c.accounts = append(c.accounts, *acc)
 	}
+
+	// add all cluster role bindings
+	c.clusterRoleBindings = crb.Get(jaeger)
 
 	// add the config map
 	if cm := configmap.NewUIConfig(jaeger).Get(); cm != nil {
@@ -66,7 +69,7 @@ func newProductionStrategy(jaeger *v1.Jaeger, existingSecrets []corev1.Secret) S
 		}
 	}
 
-	if isBoolTrue(jaeger.Spec.Storage.SparkDependencies.Enabled) {
+	if isBoolTrue(jaeger.Spec.Storage.Dependencies.Enabled) {
 		if cronjob.SupportedStorage(jaeger.Spec.Storage.Type) {
 			c.cronJobs = append(c.cronJobs, *cronjob.CreateSparkDependencies(jaeger))
 		} else {
@@ -86,7 +89,6 @@ func newProductionStrategy(jaeger *v1.Jaeger, existingSecrets []corev1.Secret) S
 	var esRollover []batchv1beta1.CronJob
 	if storage.EnableRollover(jaeger.Spec.Storage) {
 		esRollover = cronjob.CreateRollover(jaeger)
-		c.cronJobs = append(c.cronJobs, esRollover...)
 	}
 
 	// prepare the deployments, which may get changed by the elasticsearch routine
@@ -96,15 +98,11 @@ func newProductionStrategy(jaeger *v1.Jaeger, existingSecrets []corev1.Secret) S
 
 	// assembles the pieces for an elasticsearch self-provisioned deployment via the elasticsearch operator
 	if storage.ShouldDeployElasticsearch(jaeger.Spec.Storage) {
-		es := &storage.ElasticsearchDeployment{
-			Jaeger: jaeger,
-		}
-
-		err := storage.CreateESCerts(jaeger, existingSecrets)
+		err := es.CreateCerts()
 		if err != nil {
 			jaeger.Logger().WithError(err).Error("failed to create Elasticsearch certificates, Elasticsearch won't be deployed")
 		} else {
-			c.secrets = storage.ESSecrets(jaeger)
+			c.secrets = es.ExtractSecrets()
 			c.elasticsearches = append(c.elasticsearches, *es.Elasticsearch())
 
 			es.InjectStorageConfiguration(&queryDep.Spec.Template.Spec)
@@ -124,6 +122,9 @@ func newProductionStrategy(jaeger *v1.Jaeger, existingSecrets []corev1.Secret) S
 	// the index cleaner ES job, which may have been changed by the ES self-provisioning routine
 	if indexCleaner != nil {
 		c.cronJobs = append(c.cronJobs, *indexCleaner)
+	}
+	if len(esRollover) > 0 {
+		c.cronJobs = append(c.cronJobs, esRollover...)
 	}
 
 	// add the deployments, which may have been changed by the ES self-provisioning routine

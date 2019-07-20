@@ -1,7 +1,11 @@
 package inventory
 
 import (
-	"k8s.io/api/core/v1"
+	"fmt"
+
+	v1 "k8s.io/api/core/v1"
+
+	"github.com/jaegertracing/jaeger-operator/pkg/util"
 )
 
 // Account represents the service account inventory based on the current and desired states
@@ -20,11 +24,9 @@ func ForAccounts(existing []v1.ServiceAccount, desired []v1.ServiceAccount) Acco
 	for k, v := range mcreate {
 		if t, ok := mdelete[k]; ok {
 			tp := t.DeepCopy()
+			util.InitObjectMeta(tp)
 
 			// we can't blindly DeepCopyInto, so, we select what we bring from the new to the old object
-			tp.Secrets = v.Secrets
-			tp.ImagePullSecrets = v.ImagePullSecrets
-			tp.AutomountServiceAccountToken = v.AutomountServiceAccountToken
 			tp.ObjectMeta.OwnerReferences = v.ObjectMeta.OwnerReferences
 
 			for k, v := range v.ObjectMeta.Annotations {
@@ -51,7 +53,7 @@ func ForAccounts(existing []v1.ServiceAccount, desired []v1.ServiceAccount) Acco
 func accountMap(deps []v1.ServiceAccount) map[string]v1.ServiceAccount {
 	m := map[string]v1.ServiceAccount{}
 	for _, d := range deps {
-		m[d.Name] = d
+		m[fmt.Sprintf("%s.%s", d.Namespace, d.Name)] = d
 	}
 	return m
 }

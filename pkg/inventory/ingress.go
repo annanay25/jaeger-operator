@@ -1,7 +1,11 @@
 package inventory
 
 import (
+	"fmt"
+
 	"k8s.io/api/extensions/v1beta1"
+
+	"github.com/jaegertracing/jaeger-operator/pkg/util"
 )
 
 // Ingress represents the inventory of ingresses based on the current and desired states
@@ -20,6 +24,7 @@ func ForIngresses(existing []v1beta1.Ingress, desired []v1beta1.Ingress) Ingress
 	for k, v := range mcreate {
 		if t, ok := mdelete[k]; ok {
 			tp := t.DeepCopy()
+			util.InitObjectMeta(tp)
 
 			// we can't blindly DeepCopyInto, so, we select what we bring from the new to the old object
 			tp.Spec = v.Spec
@@ -49,7 +54,7 @@ func ForIngresses(existing []v1beta1.Ingress, desired []v1beta1.Ingress) Ingress
 func ingressMap(deps []v1beta1.Ingress) map[string]v1beta1.Ingress {
 	m := map[string]v1beta1.Ingress{}
 	for _, d := range deps {
-		m[d.Name] = d
+		m[fmt.Sprintf("%s.%s", d.Namespace, d.Name)] = d
 	}
 	return m
 }

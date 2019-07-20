@@ -11,7 +11,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	"github.com/jaegertracing/jaeger-operator/pkg/apis/jaegertracing/v1"
+	v1 "github.com/jaegertracing/jaeger-operator/pkg/apis/jaegertracing/v1"
 	"github.com/jaegertracing/jaeger-operator/pkg/util"
 )
 
@@ -31,11 +31,10 @@ func CreateRollover(jaeger *v1.Jaeger) []batchv1beta1.CronJob {
 func rollover(jaeger *v1.Jaeger) batchv1beta1.CronJob {
 	name := fmt.Sprintf("%s-es-rollover", jaeger.Name)
 	envs := esScriptEnvVars(jaeger.Spec.Storage.Options)
-	if jaeger.Spec.Storage.Rollover.Conditions != "" {
-		envs = append(envs, corev1.EnvVar{Name: "CONDITIONS", Value: jaeger.Spec.Storage.Rollover.Conditions})
+	if jaeger.Spec.Storage.EsRollover.Conditions != "" {
+		envs = append(envs, corev1.EnvVar{Name: "CONDITIONS", Value: jaeger.Spec.Storage.EsRollover.Conditions})
 	}
 	one := int32(1)
-	ttlHourInSec := int32(60 * 60)
 	return batchv1beta1.CronJob{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:            name,
@@ -45,16 +44,16 @@ func rollover(jaeger *v1.Jaeger) batchv1beta1.CronJob {
 		},
 		Spec: batchv1beta1.CronJobSpec{
 			ConcurrencyPolicy: batchv1beta1.ForbidConcurrent,
-			Schedule:          jaeger.Spec.Storage.Rollover.Schedule,
+			Schedule:          jaeger.Spec.Storage.EsRollover.Schedule,
 			JobTemplate: batchv1beta1.JobTemplateSpec{
 				Spec: batchv1.JobSpec{
-					TTLSecondsAfterFinished: &ttlHourInSec,
-					Parallelism:             &one,
+					Parallelism: &one,
 					Template: corev1.PodTemplateSpec{
 						ObjectMeta: metav1.ObjectMeta{
 							Annotations: map[string]string{
 								"prometheus.io/scrape":    "false",
 								"sidecar.istio.io/inject": "false",
+								"linkerd.io/inject":       "disabled",
 							},
 						},
 						Spec: corev1.PodSpec{
@@ -62,7 +61,7 @@ func rollover(jaeger *v1.Jaeger) batchv1beta1.CronJob {
 							Containers: []corev1.Container{
 								{
 									Name:  name,
-									Image: jaeger.Spec.Storage.Rollover.Image,
+									Image: jaeger.Spec.Storage.EsRollover.Image,
 									Args:  []string{"rollover", util.GetEsHostname(jaeger.Spec.Storage.Options.Map())},
 									Env:   envs,
 								},
@@ -78,8 +77,8 @@ func rollover(jaeger *v1.Jaeger) batchv1beta1.CronJob {
 func lookback(jaeger *v1.Jaeger) batchv1beta1.CronJob {
 	name := fmt.Sprintf("%s-es-lookback", jaeger.Name)
 	envs := esScriptEnvVars(jaeger.Spec.Storage.Options)
-	if jaeger.Spec.Storage.Rollover.ReadTTL != "" {
-		dur, err := time.ParseDuration(jaeger.Spec.Storage.Rollover.ReadTTL)
+	if jaeger.Spec.Storage.EsRollover.ReadTTL != "" {
+		dur, err := time.ParseDuration(jaeger.Spec.Storage.EsRollover.ReadTTL)
 		if err == nil {
 			d := parseToUnits(dur)
 			envs = append(envs, corev1.EnvVar{Name: "UNIT", Value: string(d.units)})
@@ -87,11 +86,10 @@ func lookback(jaeger *v1.Jaeger) batchv1beta1.CronJob {
 		} else {
 			jaeger.Logger().
 				WithError(err).
-				WithField("readTTL", jaeger.Spec.Storage.Rollover.ReadTTL).
+				WithField("readTTL", jaeger.Spec.Storage.EsRollover.ReadTTL).
 				Error("Failed to parse esRollover.readTTL to time.duration")
 		}
 	}
-	ttlHourInSec := int32(60 * 60)
 	return batchv1beta1.CronJob{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:            name,
@@ -101,15 +99,16 @@ func lookback(jaeger *v1.Jaeger) batchv1beta1.CronJob {
 		},
 		Spec: batchv1beta1.CronJobSpec{
 			ConcurrencyPolicy: batchv1beta1.ForbidConcurrent,
-			Schedule:          jaeger.Spec.Storage.Rollover.Schedule,
+			Schedule:          jaeger.Spec.Storage.EsRollover.Schedule,
 			JobTemplate: batchv1beta1.JobTemplateSpec{
 				Spec: batchv1.JobSpec{
-					TTLSecondsAfterFinished: &ttlHourInSec,
+					TTLSecondsAfterFinished: jaeger.Spec.Storage.EsRollover.TTLSecondsAfterFinished,
 					Template: corev1.PodTemplateSpec{
 						ObjectMeta: metav1.ObjectMeta{
 							Annotations: map[string]string{
 								"prometheus.io/scrape":    "false",
 								"sidecar.istio.io/inject": "false",
+								"linkerd.io/inject":       "disabled",
 							},
 						},
 						Spec: corev1.PodSpec{
@@ -117,7 +116,7 @@ func lookback(jaeger *v1.Jaeger) batchv1beta1.CronJob {
 							Containers: []corev1.Container{
 								{
 									Name:  name,
-									Image: jaeger.Spec.Storage.Rollover.Image,
+									Image: jaeger.Spec.Storage.EsRollover.Image,
 									Args:  []string{"lookback", util.GetEsHostname(jaeger.Spec.Storage.Options.Map())},
 									Env:   envs,
 								},

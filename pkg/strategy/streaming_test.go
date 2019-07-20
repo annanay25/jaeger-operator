@@ -10,8 +10,9 @@ import (
 	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 
-	"github.com/jaegertracing/jaeger-operator/pkg/apis/jaegertracing/v1"
+	v1 "github.com/jaegertracing/jaeger-operator/pkg/apis/jaegertracing/v1"
 	"github.com/jaegertracing/jaeger-operator/pkg/storage"
 )
 
@@ -22,7 +23,7 @@ func init() {
 
 func TestCreateStreamingDeployment(t *testing.T) {
 	name := "TestCreateStreamingDeployment"
-	c := newStreamingStrategy(v1.NewJaeger(name))
+	c := newStreamingStrategy(v1.NewJaeger(types.NamespacedName{Name: name}))
 	assertDeploymentsAndServicesForStreaming(t, name, c, false, false, false)
 }
 
@@ -31,7 +32,7 @@ func TestCreateStreamingDeploymentOnOpenShift(t *testing.T) {
 	defer viper.Reset()
 	name := "TestCreateStreamingDeploymentOnOpenShift"
 
-	jaeger := v1.NewJaeger(name)
+	jaeger := v1.NewJaeger(types.NamespacedName{Name: name})
 	normalize(jaeger)
 
 	c := newStreamingStrategy(jaeger)
@@ -41,7 +42,7 @@ func TestCreateStreamingDeploymentOnOpenShift(t *testing.T) {
 func TestCreateStreamingDeploymentWithDaemonSetAgent(t *testing.T) {
 	name := "TestCreateStreamingDeploymentWithDaemonSetAgent"
 
-	j := v1.NewJaeger(name)
+	j := v1.NewJaeger(types.NamespacedName{Name: name})
 	j.Spec.Agent.Strategy = "DaemonSet"
 
 	c := newStreamingStrategy(j)
@@ -51,7 +52,7 @@ func TestCreateStreamingDeploymentWithDaemonSetAgent(t *testing.T) {
 func TestCreateStreamingDeploymentWithUIConfigMap(t *testing.T) {
 	name := "TestCreateStreamingDeploymentWithUIConfigMap"
 
-	j := v1.NewJaeger(name)
+	j := v1.NewJaeger(types.NamespacedName{Name: name})
 	j.Spec.UI.Options = v1.NewFreeForm(map[string]interface{}{
 		"tracking": map[string]interface{}{
 			"gaID": "UA-000000-2",
@@ -74,9 +75,15 @@ func TestStreamingOptionsArePassed(t *testing.T) {
 		},
 		Spec: v1.JaegerSpec{
 			Strategy: "streaming",
+			Collector: v1.JaegerCollectorSpec{
+				Options: v1.NewOptions(map[string]interface{}{
+					"kafka.producer.topic": "mytopic",
+				}),
+			},
 			Ingester: v1.JaegerIngesterSpec{
 				Options: v1.NewOptions(map[string]interface{}{
-					"kafka.topic": "mytopic",
+					"kafka.consumer.topic":    "mytopic",
+					"kafka.consumer.group-id": "mygroup",
 				}),
 			},
 			Storage: v1.JaegerStorageSpec{
@@ -107,7 +114,7 @@ func TestStreamingOptionsArePassed(t *testing.T) {
 			assert.Equal(t, 0, escount)
 		} else if strings.Contains(dep.Name, "ingester") {
 			// Including parameters for ES and kafka topic
-			assert.Len(t, args, 4)
+			assert.Len(t, args, 5)
 			assert.Equal(t, 3, escount)
 
 		} else {
@@ -120,7 +127,7 @@ func TestStreamingOptionsArePassed(t *testing.T) {
 
 func TestDelegateStreamingDependencies(t *testing.T) {
 	// for now, we just have storage dependencies
-	j := v1.NewJaeger("TestDelegateStreamingDependencies")
+	j := v1.NewJaeger(types.NamespacedName{Name: "TestDelegateStreamingDependencies"})
 	c := newStreamingStrategy(j)
 	assert.Equal(t, c.Dependencies(), storage.Dependencies(j))
 }
@@ -150,8 +157,8 @@ func assertDeploymentsAndServicesForStreaming(t *testing.T, name string, s S, ha
 	}
 
 	services := map[string]bool{
-		fmt.Sprintf("%s-collector", name): false,
-		fmt.Sprintf("%s-query", name):     false,
+		fmt.Sprintf("%s-collector", strings.ToLower(name)): false,
+		fmt.Sprintf("%s-query", strings.ToLower(name)):     false,
 	}
 
 	ingresses := map[string]bool{}
@@ -187,7 +194,7 @@ func TestEsIndexClenarStreaming(t *testing.T) {
 }
 
 func TestAgentSidecarIsInjectedIntoQueryForStreaming(t *testing.T) {
-	j := v1.NewJaeger("TestAgentSidecarIsInjectedIntoQueryForStreaming")
+	j := v1.NewJaeger(types.NamespacedName{Name: "TestAgentSidecarIsInjectedIntoQueryForStreaming"})
 	c := newStreamingStrategy(j)
 	for _, dep := range c.Deployments() {
 		if strings.HasSuffix(dep.Name, "-query") {

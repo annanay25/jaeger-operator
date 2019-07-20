@@ -4,7 +4,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
-	"k8s.io/api/core/v1"
+	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -24,7 +24,9 @@ func TestSecretInventory(t *testing.T) {
 	}
 	updated := v1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
-			Name: "to-update",
+			Name:        "to-update",
+			Annotations: map[string]string{"gopher": "jaeger"},
+			Labels:      map[string]string{"gopher": "jaeger"},
 		},
 		StringData: map[string]string{
 			"field": "bar",
@@ -49,4 +51,25 @@ func TestSecretInventory(t *testing.T) {
 
 	assert.Len(t, inv.Delete, 1)
 	assert.Equal(t, "to-delete", inv.Delete[0].Name)
+}
+
+func TestSecretInventoryWithSameNameInstances(t *testing.T) {
+	create := []v1.Secret{{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "to-create",
+			Namespace: "tenant1",
+		},
+	}, {
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "to-create",
+			Namespace: "tenant2",
+		},
+	}}
+
+	inv := ForSecrets([]v1.Secret{}, create)
+	assert.Len(t, inv.Create, 2)
+	assert.Contains(t, inv.Create, create[0])
+	assert.Contains(t, inv.Create, create[1])
+	assert.Len(t, inv.Update, 0)
+	assert.Len(t, inv.Delete, 0)
 }

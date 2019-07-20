@@ -59,14 +59,15 @@ func CreateEsIndexCleaner(jaeger *v1.Jaeger) *batchv1beta1.CronJob {
 			Schedule: jaeger.Spec.Storage.EsIndexCleaner.Schedule,
 			JobTemplate: batchv1beta1.JobTemplateSpec{
 				Spec: batchv1.JobSpec{
-					Parallelism: &one,
+					Parallelism:             &one,
+					TTLSecondsAfterFinished: jaeger.Spec.Storage.EsIndexCleaner.TTLSecondsAfterFinished,
 					Template: corev1.PodTemplateSpec{
 						Spec: corev1.PodSpec{
 							Containers: []corev1.Container{
 								{
 									Name:    name,
 									Image:   jaeger.Spec.Storage.EsIndexCleaner.Image,
-									Args:    []string{strconv.Itoa(jaeger.Spec.Storage.EsIndexCleaner.NumberOfDays), esUrls},
+									Args:    []string{strconv.Itoa(*jaeger.Spec.Storage.EsIndexCleaner.NumberOfDays), esUrls},
 									Env:     esScriptEnvVars(jaeger.Spec.Storage.Options),
 									EnvFrom: envFromSource,
 								},
@@ -77,6 +78,7 @@ func CreateEsIndexCleaner(jaeger *v1.Jaeger) *batchv1beta1.CronJob {
 							Annotations: map[string]string{
 								"prometheus.io/scrape":    "false",
 								"sidecar.istio.io/inject": "false",
+								"linkerd.io/inject":       "disabled",
 							},
 						},
 					},
