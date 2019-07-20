@@ -259,24 +259,6 @@ func TestAgentResouceDefsOverride(t *testing.T) {
 	assert.Equal(t, dep.Spec.Template.Spec.Containers[1].Resources.Limits[corev1.ResourceLimitsMemory], MemLimit)
 }
 
-func TestAgentResouceDefsParseErr(t *testing.T) {
-	jaeger := v1.NewJaeger("TestAgentResouceDefsOverride")
-	dep := dep(map[string]string{Annotation: jaeger.Name, "jaeger-agent-max-cpu": "1024m0", "jaeger-agent-max-memory": "100MiB"}, map[string]string{})
-
-	// Inject sidecar agent
-	Sidecar(jaeger, dep)
-
-	// Assert that the agent is injected.
-	assert.Len(t, dep.Spec.Template.Spec.Containers, 2)
-	assert.Contains(t, dep.Spec.Template.Spec.Containers[1].Image, "jaeger-agent")
-
-	// Check resource values for the injected sidecar.
-	CPULimit, _ := resource.ParseQuantity("500m")
-	MemLimit, _ := resource.ParseQuantity("128Mi")
-	assert.Equal(t, dep.Spec.Template.Spec.Containers[1].Resources.Limits[corev1.ResourceLimitsCPU], CPULimit)
-	assert.Equal(t, dep.Spec.Template.Spec.Containers[1].Resources.Limits[corev1.ResourceLimitsMemory], MemLimit)
-}
-
 func TestSidecarOrderOfArguments(t *testing.T) {
 	jaeger := v1.NewJaeger(types.NamespacedName{Name: "TestQueryOrderOfArguments"})
 	jaeger.Spec.Agent.Options = v1.NewOptions(map[string]interface{}{
@@ -348,6 +330,51 @@ func TestSidecarAgentResources(t *testing.T) {
 	assert.Equal(t, *resource.NewQuantity(512, resource.DecimalSI), dep.Spec.Template.Spec.Containers[1].Resources.Limits[corev1.ResourceLimitsEphemeralStorage])
 	assert.Equal(t, *resource.NewQuantity(512, resource.DecimalSI), dep.Spec.Template.Spec.Containers[1].Resources.Requests[corev1.ResourceRequestsEphemeralStorage])
 }
+
+func TestAgentResourceDefsOverride(t *testing.T) {
+	jaeger := v1.NewJaeger(types.NamespacedName{Name: "TestSidecarAgentResources"})
+	jaeger.Spec.Agent.Resources = corev1.ResourceRequirements{
+		Limits: corev1.ResourceList{
+			corev1.ResourceLimitsCPU:    *resource.NewQuantity(2048, resource.BinarySI),
+			corev1.ResourceLimitsMemory: *resource.NewQuantity(123, resource.DecimalSI),
+		},
+	}
+	dep := dep(map[string]string{Annotation: jaeger.Name, "jaeger-agent-max-cpu": "1024m", "jaeger-agent-max-memory": "100Mi"}, map[string]string{})
+
+	// Inject agent sidecar
+	Sidecar(jaeger, dep)
+
+	// Assert agent injection.
+	assert.Len(t, dep.Spec.Template.Spec.Containers, 2)
+	assert.Equal(t, "jaeger-agent", dep.Spec.Template.Spec.Containers[1].Name)
+
+	// Check resource values for the injected sidecar.
+	assert.Equal(t, *resource.NewQuantity(1024, resource.BinarySI), dep.Spec.Template.Spec.Containers[1].Resources.Limits[corev1.ResourceLimitsCPU])
+	assert.Equal(t, *resource.NewQuantity(100, resource.DecimalSI), dep.Spec.Template.Spec.Containers[1].Resources.Limits[corev1.ResourceLimitsMemory])
+}
+
+func TestAgentResouceDefsParseErr(t *testing.T) {
+	jaeger := v1.NewJaeger(types.NamespacedName{Name: "TestSidecarAgentResources"})
+	jaeger.Spec.Agent.Resources = corev1.ResourceRequirements{
+		Limits: corev1.ResourceList{
+			corev1.ResourceLimitsCPU:    *resource.NewQuantity(2048, resource.BinarySI),
+			corev1.ResourceLimitsMemory: *resource.NewQuantity(123, resource.DecimalSI),
+		},
+	}
+	dep := dep(map[string]string{Annotation: jaeger.Name, "jaeger-agent-max-cpu": "1024m0", "jaeger-agent-max-memory": "100MiB"}, map[string]string{})
+
+	// Inject agent sidecar
+	Sidecar(jaeger, dep)
+
+	// Assert agent injection.
+	assert.Len(t, dep.Spec.Template.Spec.Containers, 2)
+	assert.Equal(t, "jaeger-agent", dep.Spec.Template.Spec.Containers[1].Name)
+
+	// Check resource values for the injected sidecar.
+	assert.Equal(t, *resource.NewQuantity(2048, resource.BinarySI), dep.Spec.Template.Spec.Containers[1].Resources.Limits[corev1.ResourceLimitsCPU])
+	assert.Equal(t, *resource.NewQuantity(123, resource.DecimalSI), dep.Spec.Template.Spec.Containers[1].Resources.Limits[corev1.ResourceLimitsMemory])
+}
+
 
 func dep(annotations map[string]string, labels map[string]string) *appsv1.Deployment {
 	return &appsv1.Deployment{

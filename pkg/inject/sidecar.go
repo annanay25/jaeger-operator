@@ -114,6 +114,7 @@ func container(jaeger *v1.Jaeger, dep *appsv1.Deployment) corev1.Container {
 			jaeger.Logger().Debugf("Could not parse quantity for CPU limits: %v, using defaults.", limitCPU)
 		} else {
 			// Add CPU limits based on annotations.
+			jaeger.Spec.Agent.JaegerCommonSpec.Resources.Limits["cpu"] = CPULimit
 		}
 	}
 	if dep.Annotations[LimitMem] != "" {
@@ -123,6 +124,7 @@ func container(jaeger *v1.Jaeger, dep *appsv1.Deployment) corev1.Container {
 			jaeger.Logger().Debugf("Could not parse quantity for Memory limits: %v, using defaults.", limitMem)
 		} else {
 			// Add Memory limits based on annotations.
+			jaeger.Spec.Agent.JaegerCommonSpec.Resources.Limits["memory"] = MemLimit
 		}
 	}
 
