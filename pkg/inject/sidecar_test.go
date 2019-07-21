@@ -314,7 +314,7 @@ func TestSidecarAgentResources(t *testing.T) {
 }
 
 func TestAgentResourceDefsOverride(t *testing.T) {
-	jaeger := v1.NewJaeger(types.NamespacedName{Name: "TestSidecarAgentResources"})
+	jaeger := v1.NewJaeger(types.NamespacedName{Name: "TestAgentResourceDefsOverride"})
 	jaeger.Spec.Agent.Resources = corev1.ResourceRequirements{
 		Limits: corev1.ResourceList{
 			corev1.ResourceLimitsCPU:    *resource.NewQuantity(2048, resource.BinarySI),
@@ -335,8 +335,8 @@ func TestAgentResourceDefsOverride(t *testing.T) {
 	assert.Equal(t, *resource.NewQuantity(100, resource.DecimalSI), dep.Spec.Template.Spec.Containers[1].Resources.Limits[corev1.ResourceLimitsMemory])
 }
 
-func TestAgentResouceDefsParseErr(t *testing.T) {
-	jaeger := v1.NewJaeger(types.NamespacedName{Name: "TestSidecarAgentResources"})
+func TestAgentResourceDefsParseErr(t *testing.T) {
+	jaeger := v1.NewJaeger(types.NamespacedName{Name: "TestAgentResourceDefsParseErr"})
 	jaeger.Spec.Agent.Resources = corev1.ResourceRequirements{
 		Limits: corev1.ResourceList{
 			corev1.ResourceLimitsCPU:    *resource.NewQuantity(2048, resource.BinarySI),
